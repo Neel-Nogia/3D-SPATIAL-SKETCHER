@@ -182,7 +182,7 @@ python app.py
 ### Step 7: Open Browser
 
 ```text
-http://localhost:5000
+http://localhost:3000
 ```
 
 ---
