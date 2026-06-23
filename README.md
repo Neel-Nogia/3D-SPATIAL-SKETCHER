@@ -1,157 +1,296 @@
-Below is a detailed **README.md** for your GitHub project **3D Spatial Sketcher**, followed by the same content in plain text format.
-
 # 3D Spatial Sketcher
 
-## 🚀 Overview
+> **Draw, Design, and Visualize in Three Dimensions**
 
-3D Spatial Sketcher is an interactive application that enables users to create, edit, and visualize sketches in a three-dimensional environment. The project is designed to provide an intuitive platform for drawing and manipulating 3D objects while improving spatial understanding and creativity.
+## 📌 Project Overview
 
-Whether for education, architecture, engineering, product design, or creative modeling, 3D Spatial Sketcher offers a simple and efficient way to transform ideas into immersive 3D visualizations.
+3D Spatial Sketcher is an interactive 3D visualization and sketching platform that enables users to create, edit, and manipulate objects in a three-dimensional workspace. The application combines the power of Python for backend processing and geometric computations with modern web technologies for real-time 3D rendering and user interaction.
+
+The project is designed for students, engineers, architects, designers, and researchers who require an intuitive environment for creating and exploring 3D models. By providing real-time visualization and object manipulation tools, the platform helps users improve spatial understanding and transform ideas into digital 3D representations.
 
 ---
 
-## ✨ Features
+## 🎯 Problem Statement
 
-* Interactive 3D drawing workspace
-* Real-time 3D rendering
-* Object creation and editing
-* Rotate, scale, and translate objects
-* Perspective and orthographic views
-* Grid-based sketching system
-* Zoom and camera navigation controls
-* Save and load project functionality
-* User-friendly interface
-* Cross-platform compatibility
+Traditional 2D drawing tools often make it difficult to visualize objects in three-dimensional space. Users struggle to understand depth, perspective, and object relationships when working with complex designs.
+
+3D Spatial Sketcher addresses this challenge by providing a dynamic environment where users can sketch, manipulate, and visualize designs directly in 3D space.
 
 ---
 
 ## 🎯 Objectives
 
-The primary objectives of this project are:
-
-* To provide an intuitive platform for creating 3D sketches.
-* To improve users' spatial visualization skills.
-* To simplify the process of conceptual design and prototyping.
-* To offer a learning tool for students and professionals interested in 3D modeling.
+* Develop an interactive 3D sketching environment.
+* Improve spatial visualization and understanding.
+* Enable real-time creation and modification of 3D objects.
+* Provide an educational platform for learning 3D geometry.
+* Support engineering, architecture, and design applications.
+* Integrate Python-based geometric calculations with modern visualization technologies.
 
 ---
 
-## 🛠️ Technologies Used
+## ✨ Features
+
+### Core Features
+
+* Interactive 3D workspace
+* Real-time rendering
+* Create and manipulate 3D shapes
+* Rotate, move, and scale objects
+* Zoom and camera navigation controls
+* Perspective and orthographic viewing modes
+* Grid-based sketching system
+* Object selection and editing
+* Save and load projects
+* Responsive user interface
+
+### Advanced Features
+
+* Python-based geometry calculations
+* Coordinate system visualization
+* Dynamic object transformations
+* Real-time spatial measurements
+* Data export and import functionality
+* Modular architecture for future enhancements
+
+---
+
+## 🏗️ System Architecture
 
 ### Frontend
+
+The frontend is responsible for rendering 3D objects and handling user interactions.
+
+Technologies:
 
 * HTML5
 * CSS3
 * JavaScript
-
-### 3D Graphics
-
 * Three.js
 * WebGL
 
-### Backend (Optional)
+### Backend
 
-* Node.js
-* Express.js
+The backend processes geometric calculations and manages application logic.
+
+Technologies:
+
+* Python 3.x
+* Flask
+* NumPy
 
 ### Database (Optional)
 
+For storing projects and user data:
+
+* SQLite
 * MongoDB
-* Firebase
+
+---
+
+## 🛠️ Technology Stack
+
+| Component            | Technology            |
+| -------------------- | --------------------- |
+| Frontend             | HTML, CSS, JavaScript |
+| 3D Rendering         | Three.js, WebGL       |
+| Backend              | Python, Flask         |
+| Numerical Processing | NumPy                 |
+| Database             | SQLite / MongoDB      |
+| Version Control      | Git & GitHub          |
 
 ---
 
 ## 📂 Project Structure
 
+```text
 3D-Spatial-Sketcher/
 │
-├── index.html
-├── css/
-│ └── style.css
-├── js/
-│ ├── app.js
-│ ├── controls.js
-│ └── renderer.js
+├── frontend/
+│   ├── index.html
+│   ├── style.css
+│   ├── app.js
+│   ├── renderer.js
+│   └── controls.js
+│
+├── backend/
+│   ├── app.py
+│   ├── geometry.py
+│   ├── calculations.py
+│   └── requirements.txt
+│
 ├── assets/
-│ ├── icons/
-│ └── images/
-├── models/
+│   ├── images/
+│   └── icons/
+│
+├── database/
+│   └── sketches.db
+│
 ├── README.md
-└── package.json
+│
+└── requirements.txt
+```
 
 ---
 
-## ⚙️ Installation
+## ⚙️ Installation Guide
 
-1. Clone the repository
+### Step 1: Clone Repository
 
 ```bash
 git clone https://github.com/yourusername/3D-Spatial-Sketcher.git
 ```
 
-2. Navigate to the project folder
+### Step 2: Enter Project Directory
 
 ```bash
 cd 3D-Spatial-Sketcher
 ```
 
-3. Install dependencies
+### Step 3: Create Virtual Environment
 
 ```bash
-npm install
+python -m venv venv
 ```
 
-4. Run the application
+### Step 4: Activate Virtual Environment
+
+Windows:
 
 ```bash
-npm start
+venv\Scripts\activate
 ```
 
-5. Open your browser and visit
+Linux/Mac:
 
 ```bash
-http://localhost:3000
+source venv/bin/activate
+```
+
+### Step 5: Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 6: Run Flask Application
+
+```bash
+python app.py
+```
+
+### Step 7: Open Browser
+
+```text
+http://localhost:5000
 ```
 
 ---
 
-## 📖 How to Use
+## 📖 Usage
+
+### Creating a Sketch
 
 1. Open the application.
 2. Select a drawing tool.
-3. Create 3D shapes in the workspace.
-4. Use camera controls to navigate.
-5. Rotate, move, or scale objects.
-6. Save your project for future editing.
-7. Export designs as needed.
+3. Create a 3D object in the workspace.
+4. Adjust position, scale, and rotation.
+5. Save the sketch.
+
+### Editing Objects
+
+* Select an object.
+* Use transformation tools.
+* Modify dimensions and orientation.
+
+### Navigating the Workspace
+
+* Scroll to zoom.
+* Drag to rotate camera.
+* Use navigation controls for movement.
 
 ---
 
-## 🎨 Applications
+## 🔄 Workflow
 
-* Educational learning
-* Architectural design
-* Engineering visualization
-* Product prototyping
-* Game asset planning
-* Creative digital art
+1. User creates a sketch.
+2. Frontend captures input.
+3. Data is sent to Flask backend.
+4. Python processes geometry calculations.
+5. Results are returned to frontend.
+6. Three.js renders updated 3D scene.
+7. User continues editing interactively.
 
 ---
 
-## 🔮 Future Enhancements
+## 📊 Applications
+
+### Education
+
+* Learning 3D geometry
+* Engineering graphics
+* Visualization training
+
+### Architecture
+
+* Conceptual building design
+* Interior planning
+* Structural visualization
+
+### Engineering
+
+* Mechanical component modeling
+* Prototype visualization
+* Design analysis
+
+### Product Design
+
+* Concept development
+* Shape experimentation
+* Rapid prototyping
+
+### Creative Arts
+
+* 3D artwork
+* Digital sculpting concepts
+* Interactive visual projects
+
+---
+
+## 🔐 Advantages
+
+* Easy to use
+* Interactive interface
+* Real-time visualization
+* Accurate geometric calculations
+* Cross-platform support
+* Expandable architecture
+* Educational and professional applications
+
+---
+
+## 🚀 Future Enhancements
 
 * AI-assisted sketch generation
-* Collaborative multi-user editing
-* VR/AR integration
-* Cloud project storage
-* Advanced material and lighting support
-* Export to industry-standard 3D formats
+* Machine learning-based shape prediction
+* AR and VR support
+* Cloud synchronization
+* Multi-user collaboration
+* Voice-controlled modeling
+* Real-time team editing
+* Advanced material rendering
+* Physics simulation
+* Export to STL, OBJ, and FBX formats
 
 ---
 
-## 🤝 Contributors
+## 📈 Expected Outcomes
 
-Contributions are welcome. Feel free to fork the repository and submit pull requests.
+* Improved spatial reasoning skills
+* Faster design iteration
+* Enhanced learning experience
+* Better visualization of complex structures
+* Increased productivity for designers and engineers
 
 ---
 
@@ -161,52 +300,22 @@ This project is licensed under the MIT License.
 
 ---
 
-## 📬 Contact
+## 👨‍💻 Developed By
 
-For questions, suggestions, or collaboration opportunities, please open an issue or contact the project maintainer.
+NOGIA NEEL
+
+For academic, research, and educational purposes.
 
 ---
 
-### Tagline
+## 📧 Contact
 
-"Draw Ideas Beyond Dimensions."
+For questions, feedback, or collaboration opportunities:
 
-### Plain Text Version
+Email: [neelnogia25@gmail.com]
 
-**3D Spatial Sketcher** is an interactive application that allows users to create, edit, and visualize sketches in a three-dimensional environment. It provides real-time rendering, object manipulation, camera controls, and intuitive drawing tools.
+GitHub: https://github.com/Neel-Nogia
 
-**Features:**
+---
 
-* Interactive 3D drawing
-* Real-time visualization
-* Object rotation, scaling, and movement
-* Multiple viewing modes
-* Grid-based workspace
-* Save and load projects
-* Easy navigation controls
-
-**Objectives:**
-
-* Improve spatial visualization skills
-* Simplify 3D design and prototyping
-* Support education and engineering applications
-
-**Technologies Used:**
-
-* HTML, CSS, JavaScript
-* Three.js
-* WebGL
-* Node.js (optional)
-* MongoDB/Firebase (optional)
-
-**Applications:**
-
-* Architecture
-* Engineering
-* Education
-* Product Design
-* Creative 3D Modeling
-
-**Future Scope:**
-
-* AI-assisted de
+# ⭐ If you like this project, don't forget to star the repository!
