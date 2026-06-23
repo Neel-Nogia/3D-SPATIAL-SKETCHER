@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpatialSketcher 3D - Hand Gesture Drawing</title>
+  <!-- SEO & Description -->
+  <meta name="description" content="Draw and sketch in 3D space in real-time using your webcam and hand gestures. Powered by Three.js and MediaPipe Hands.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  
+  <!-- Styling -->
+  <link rel="stylesheet" href="./style.css">
+  
+  <!-- Three.js (Global UMD Scripts) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+  
+  <!-- MediaPipe Hands Legacy (Global UMD Scripts) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <!-- Loading Loader -->
+  <div id="loader-overlay" class="loader-container">
+    <div class="loader-content">
+      <div class="spinner"></div>
+      <h1 class="loader-title">SPATIAL SKETCHER 3D</h1>
+      <p id="loader-status" class="loader-status">Initializing WebGL & camera subsystems...</p>
+    </div>
+  </div>
+
+  <!-- Main 3D Canvas -->
+  <canvas id="three-canvas"></canvas>
+
+  <!-- Floating Webcam Feedback Panel -->
+  <div id="webcam-panel" class="glass-panel floating-webcam">
+    <div class="panel-header">
+      <span class="status-dot inactive" id="status-dot"></span>
+      <span class="panel-title">CAMERA STREAM</span>
+      <button id="toggle-webcam-size" class="icon-btn" title="Toggle size">⛶</button>
+    </div>
+    <div class="webcam-viewport">
+      <video id="webcam-video" autoplay playsinline muted></video>
+      <canvas id="webcam-overlay"></canvas>
+    </div>
+    <div class="webcam-info">
+      <span id="tracking-status">Model Loading...</span>
+    </div>
+  </div>
+
+  <!-- Main Control Panel Dashboard -->
+  <div id="control-panel" class="glass-panel sidebar-panel">
+    <div class="brand">
+      <span class="logo-icon">✧</span>
+      <div>
+        <h1 class="app-name">SPATIAL SKETCHER</h1>
+        <p class="app-tagline">3D GESTURE ENGINE v1.0</p>
+      </div>
+    </div>
+
+    <!-- Active State indicator -->
+    <div class="state-indicator" id="state-indicator">
+      <span class="gesture-icon">🖐️</span>
+      <span id="current-gesture-text">HOVERING</span>
+    </div>
+
+    <hr class="panel-divider">
+
+    <!-- Section: Brush Customization -->
+    <div class="panel-section">
+      <h2 class="section-title">Brush Properties</h2>
+      
+      <label class="control-label">Stroke Color</label>
+      <div class="color-palette">
+        <button class="color-swatch active" style="background: #00ffff;" data-color="#00ffff" title="Neon Cyan"></button>
+        <button class="color-swatch" style="background: #ff007f;" data-color="#ff007f" title="Neon Magenta"></button>
+        <button class="color-swatch" style="background: #39ff14;" data-color="#39ff14" title="Neon Green"></button>
+        <button class="color-swatch" style="background: #ffd700;" data-color="#ffd700" title="Gold"></button>
+        <button class="color-swatch" style="background: #ffffff;" data-color="#ffffff" title="Bright White"></button>
+        <div class="color-picker-wrapper">
+          <input type="color" id="custom-color-picker" value="#ff00ff">
+          <span class="picker-preview">🎨</span>
+        </div>
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-header">
+          <label for="brush-size" class="control-label">Brush Size</label>
+          <span id="brush-size-val" class="value-display">12</span>
+        </div>
+        <input type="range" id="brush-size" min="2" max="50" value="12" class="range-slider">
+      </div>
+    </div>
+
+    <hr class="panel-divider">
+
+    <!-- Section: Drawing Mode & Constraints -->
+    <div class="panel-section">
+      <h2 class="section-title">Canvas Settings</h2>
+      
+      <label class="control-label">Sketch Constraints</label>
+      <div class="btn-group-segmented">
+        <button class="segment-btn active" id="draw-mode-free">Free 3D</button>
+        <button class="segment-btn" id="draw-mode-xy">Lock XY</button>
+        <button class="segment-btn" id="draw-mode-xz">Lock XZ</button>
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-header">
+          <label for="depth-offset" class="control-label">Base Depth (Z)</label>
+          <span id="depth-offset-val" class="value-display">0</span>
+        </div>
+        <input type="range" id="depth-offset" min="-100" max="100" value="0" class="range-slider">
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-header">
+          <label for="draw-smoothing" class="control-label">Smoothing</label>
+          <span id="draw-smoothing-val" class="value-display">0.85</span>
+        </div>
+        <input type="range" id="draw-smoothing" min="0.5" max="0.99" step="0.01" value="0.85" class="range-slider">
+      </div>
+    </div>
+
+    <hr class="panel-divider">
+
+    <!-- Section: Actions -->
+    <div class="panel-section actions-section">
+      <div class="action-grid">
+        <button id="btn-undo" class="action-btn secondary" title="Undo last stroke">
+          <span class="btn-icon">↺</span> Undo
+        </button>
+        <button id="btn-clear" class="action-btn danger" title="Clear entire sketch">
+          <span class="btn-icon">🗑</span> Clear
+        </button>
+      </div>
+      <button id="btn-export" class="action-btn primary full-width" title="Export sketch as a 3D GLTF file">
+        <span class="btn-icon">📥</span> Export 3D Model (.gltf)
+      </button>
+    </div>
+
+    <hr class="panel-divider">
+
+    <!-- Section: Instructions -->
+    <div class="panel-section instructions-section">
+      <h2 class="section-title">Gesture References</h2>
+      <ul class="gesture-list">
+        <li>
+          <span class="gesture-icon-mini">🖐️</span> 
+          <div>
+            <strong>Open Hand</strong>
+            <span>Moves cursor around (Hover)</span>
+          </div>
+        </li>
+        <li>
+          <span class="gesture-icon-mini">🤏</span> 
+          <div>
+            <strong>Pinch Thumb + Index</strong>
+            <span>Draws 3D tube (single or both hands!)</span>
+          </div>
+        </li>
+        <li>
+          <span class="gesture-icon-mini">✌️</span> 
+          <div>
+            <strong>Peace Sign (2 fingers)</strong>
+            <span>Eraser (rub lines to erase them)</span>
+          </div>
+        </li>
+      </ul>
+      <div class="btn-group-compact">
+        <button id="btn-reset-camera" class="compact-btn">Reset Camera View</button>
+        <button id="btn-toggle-camera-view" class="compact-btn">Toggle Video overlay</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Banner -->
+  <div id="notification-banner" class="notification hidden">
+    <span id="notification-message">Notification message</span>
+  </div>
+
+  <!-- WebGL, Three.js and App entry -->
+  <script src="./app.js"></script>
+</body>
+</html>
