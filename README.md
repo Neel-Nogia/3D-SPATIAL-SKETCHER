@@ -209,10 +209,4 @@ For questions, suggestions, or collaboration opportunities, please open an issue
 
 **Future Scope:**
 
-* AI-assisted design
-* VR/AR support
-* Cloud storage
-* Collaborative editing
-* Advanced rendering tools
-
-**Tagline:** Draw Ideas Beyond Dimensions. 🚀
+* AI-assisted de
