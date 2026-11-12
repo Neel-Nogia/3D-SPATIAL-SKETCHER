@@ -12,7 +12,7 @@
 
 ## 🚀 Live Demo
 
-👉 **[Launch 3D Spatial Sketcher (Live Link)](#)** *(Updated upon deployment)*
+👉 **[Launch 3D Spatial Sketcher (Live Link)](https://3-d-spatial-sketcher.vercel.app/)**
 
 ---
 
