@@ -11,6 +11,7 @@ import type {
   Theme,
   SnapSize,
   Vec3,
+  CameraPreset,
 } from '../types/scene';
 import { generateId } from '../utils/ids';
 
@@ -47,6 +48,10 @@ interface SceneStore {
   // --- Undo / Redo ---
   past: SceneSnapshot[];
   future: SceneSnapshot[];
+
+  // --- Camera state ---
+  cameraTrigger: { preset: CameraPreset; timestamp: number } | null;
+  setCameraPreset: (preset: CameraPreset) => void;
 
   // --- Counters for auto-naming ---
   nameCounts: Record<string, number>;
@@ -130,6 +135,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   projectName: 'Untitled Project',
   past: [],
   future: [],
+  cameraTrigger: null,
   nameCounts: {},
 
   // --- Simple setters ---
@@ -149,6 +155,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     set({ theme: newTheme });
   },
   setProjectName: (name) => set({ projectName: name }),
+  setCameraPreset: (preset) => set({ cameraTrigger: { preset, timestamp: Date.now() } }),
 
   // --- Object actions ---
   addObject: (objData) => {
