@@ -8,6 +8,7 @@ import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { PlaneControls } from './components/PlaneControls';
+import { RightPanel } from './components/RightPanel';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 export default function App() {
@@ -30,6 +31,9 @@ export default function App() {
           <PlaneControls />
           <Canvas3D />
         </div>
+
+        {/* Right panel: Properties and Layers */}
+        <RightPanel />
       </div>
 
       {/* Bottom status bar */}

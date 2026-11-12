@@ -7,6 +7,7 @@ import { useSceneStore } from '../store/useSceneStore';
 import { SceneHelpers } from '../scene/SceneHelpers';
 import { SceneObjectMesh } from '../scene/SceneObjectMesh';
 import { DrawingPlane } from '../scene/DrawingPlane';
+import { SelectionGizmo } from '../scene/SelectionGizmo';
 
 function SceneObjects() {
   const order = useSceneStore((s) => s.order);
@@ -37,6 +38,7 @@ export function Canvas3D() {
       <SceneHelpers />
       <DrawingPlane />
       <SceneObjects />
+      <SelectionGizmo />
     </Canvas>
   );
 }
