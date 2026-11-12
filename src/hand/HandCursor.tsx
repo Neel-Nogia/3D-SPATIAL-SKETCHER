@@ -1,40 +1,67 @@
 /**
  * HandCursor — 3D cursor mesh in the R3F scene + Webcam overlay preview HUD.
  * Renders:
- * - Glowing 3D sphere at the raycasted hand cursor position.
- * - Picture-in-picture mirrored camera preview with drawn 21 landmarks.
+ * - Glowing 3D sphere at the raycasted hand cursor position (updated at 60 FPS in R3F useFrame).
+ * - Picture-in-picture mirrored camera preview with hardware-accelerated <video> tag.
+ * - Hardware canvas overlay for 21 hand landmarks skeleton with zero React re-render lag.
  * - Real-time gesture badge (Pinch / Open Palm / Fist / Thumbs Up / Idle).
- * - Status chip ("Tracking" / "No hand detected").
+ * - Prominent hand guidance banner explaining hand tracking vs face tracking.
+ * - Status chip ("Active & Tracking" / "Looking for hand...").
  * - Privacy banner: "Video stays in your browser. Nothing is uploaded."
  */
 import { useEffect, useRef, useState } from 'react';
-import type { Landmark, GestureType } from './gestures';
-import { Video, ShieldCheck, Activity, Sparkles } from 'lucide-react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+import { handCursorState } from './handCursorBridge';
+import type { GestureType } from './gestures';
+import { Video, ShieldCheck, Activity, Sparkles, Hand } from 'lucide-react';
 
-interface HandCursor3DProps {
-  cursorPosition: [number, number, number] | null;
-  isPinching: boolean;
-}
+/** 3D Glowing Cursor rendered inside Canvas3D, updated in useFrame with zero React diffing */
+export function HandCursor3D() {
+  const groupRef = useRef<THREE.Group>(null);
+  const coreMeshRef = useRef<THREE.Mesh>(null);
+  const glowMeshRef = useRef<THREE.Mesh>(null);
 
-/** 3D Glowing Cursor rendered inside Canvas3D */
-export function HandCursor3D({ cursorPosition, isPinching }: HandCursor3DProps) {
-  if (!cursorPosition) return null;
+  useFrame(() => {
+    if (!groupRef.current) return;
+
+    const pos = handCursorState.position;
+    if (!pos || !handCursorState.visible) {
+      groupRef.current.visible = false;
+      return;
+    }
+
+    groupRef.current.visible = true;
+    groupRef.current.position.set(pos[0], pos[1], pos[2]);
+
+    const isPinching = handCursorState.isPinching;
+    if (coreMeshRef.current) {
+      const mat = coreMeshRef.current.material as THREE.MeshBasicMaterial;
+      mat.color.set(isPinching ? '#ef4444' : '#6366f1');
+      const scale = isPinching ? 1.4 : 1.0;
+      coreMeshRef.current.scale.setScalar(scale);
+    }
+
+    if (glowMeshRef.current) {
+      const mat = glowMeshRef.current.material as THREE.MeshBasicMaterial;
+      mat.color.set(isPinching ? '#f87171' : '#818cf8');
+      const scale = isPinching ? 1.3 : 1.0;
+      glowMeshRef.current.scale.setScalar(scale);
+    }
+  });
 
   return (
-    <group position={cursorPosition}>
+    <group ref={groupRef} visible={false}>
       {/* Center sphere */}
-      <mesh>
-        <sphereGeometry args={[isPinching ? 0.12 : 0.08, 16, 16]} />
-        <meshBasicMaterial
-          color={isPinching ? '#ef4444' : '#6366f1'}
-          wireframe={false}
-        />
+      <mesh ref={coreMeshRef}>
+        <sphereGeometry args={[0.09, 16, 16]} />
+        <meshBasicMaterial color="#6366f1" />
       </mesh>
       {/* Outer translucent glow ring */}
-      <mesh>
-        <sphereGeometry args={[isPinching ? 0.22 : 0.16, 16, 16]} />
+      <mesh ref={glowMeshRef}>
+        <sphereGeometry args={[0.18, 16, 16]} />
         <meshBasicMaterial
-          color={isPinching ? '#f87171' : '#818cf8'}
+          color="#818cf8"
           transparent
           opacity={0.35}
           wireframe
@@ -45,134 +72,103 @@ export function HandCursor3D({ cursorPosition, isPinching }: HandCursor3DProps) 
 }
 
 interface HandTrackingOverlayProps {
-  videoElement: HTMLVideoElement | null;
-  landmarks: Landmark[] | null;
+  mediaStream: MediaStream | null;
   gesture: GestureType;
   status: string;
   smoothness: number;
   onSmoothnessChange: (val: number) => void;
   onClose: () => void;
+  setOverlayCanvas: (canvas: HTMLCanvasElement | null) => void;
 }
 
-/** Picture-in-Picture camera preview with skeleton and gesture HUD */
+/** Picture-in-Picture camera preview with hardware video and skeleton HUD */
 export function HandTrackingOverlay({
-  videoElement,
-  landmarks,
+  mediaStream,
   gesture,
   status,
   smoothness,
   onSmoothnessChange,
   onClose,
+  setOverlayCanvas,
 }: HandTrackingOverlayProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Draw 21 landmarks on preview canvas
+  // Connect mediaStream directly to HTML video element for hardware GPU acceleration
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw video frame mirrored
-    if (videoElement && videoElement.readyState >= 2) {
-      ctx.save();
-      ctx.scale(-1, 1);
-      ctx.drawImage(videoElement, -canvas.width, 0, canvas.width, canvas.height);
-      ctx.restore();
+    if (videoRef.current && mediaStream) {
+      videoRef.current.srcObject = mediaStream;
+      videoRef.current.play().catch(() => {});
     }
+  }, [mediaStream]);
 
-    if (landmarks && landmarks.length >= 21) {
-      ctx.save();
-      ctx.fillStyle = '#6366f1';
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-
-      // Draw mirrored landmarks
-      for (const pt of landmarks) {
-        const x = (1.0 - pt.x) * canvas.width;
-        const y = pt.y * canvas.height;
-
-        ctx.beginPath();
-        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Draw hand skeleton bones
-      const connections = [
-        [0, 1], [1, 2], [2, 3], [3, 4], // thumb
-        [0, 5], [5, 6], [6, 7], [7, 8], // index
-        [5, 9], [9, 10], [10, 11], [11, 12], // middle
-        [9, 13], [13, 14], [14, 15], [15, 16], // ring
-        [13, 17], [17, 18], [18, 19], [19, 20], // pinky
-        [0, 17], // palm base
-      ];
-
-      ctx.beginPath();
-      for (const [i, j] of connections) {
-        const p1 = landmarks[i];
-        const p2 = landmarks[j];
-        if (p1 && p2) {
-          ctx.moveTo((1.0 - p1.x) * canvas.width, p1.y * canvas.height);
-          ctx.lineTo((1.0 - p2.x) * canvas.width, p2.y * canvas.height);
-        }
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  }, [landmarks, videoElement]);
+  // Register overlay canvas ref to hook
+  useEffect(() => {
+    setOverlayCanvas(canvasRef.current);
+    return () => {
+      setOverlayCanvas(null);
+    };
+  }, [setOverlayCanvas]);
 
   const gestureLabelMap: Record<GestureType, string> = {
     pinch: '🤏 Pinch (Drawing)',
     open_palm: '✋ Open Palm (Orbit)',
-    fist: '✊ Fist (Idle)',
+    fist: '✊ Fist (Rest)',
     thumbs_up: '👍 Thumbs Up (Undo)',
-    idle: '👋 Tracking...',
+    idle: '👋 Ready',
   };
 
   return (
-    <div className="absolute bottom-12 right-3 z-30 flex flex-col items-end gap-1.5 select-none">
+    <div className="absolute bottom-12 right-3 z-30 flex flex-col items-end gap-1.5 select-none max-w-[280px]">
+      {/* Instruction Guidance Pill */}
+      {status === 'no_hand' && (
+        <div className="bg-amber-500/90 text-slate-950 font-semibold px-3 py-1.5 rounded-lg text-xs shadow-lg flex items-center gap-1.5 animate-bounce">
+          <Hand size={14} className="shrink-0" />
+          <span>Raise hand in front of camera (1-2 ft away)</span>
+        </div>
+      )}
+
       {/* Preview Card */}
       <div
-        className="w-56 rounded-xl border shadow-2xl p-2.5 backdrop-blur-md flex flex-col gap-2"
+        className="w-64 rounded-xl border shadow-2xl p-3 backdrop-blur-md flex flex-col gap-2.5"
         style={{
-          background: 'rgba(15, 23, 42, 0.92)',
-          borderColor: 'rgba(99, 102, 241, 0.35)',
+          background: 'rgba(15, 23, 42, 0.94)',
+          borderColor: 'rgba(99, 102, 241, 0.4)',
           color: '#f8fafc',
         }}
       >
         {/* Header with Status Chip */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Video size={13} className="text-indigo-400" />
-            <span className="text-[11px] font-semibold">Hand Tracking</span>
+            <Video size={14} className="text-indigo-400" />
+            <span className="text-xs font-semibold">Hand Tracking</span>
           </div>
 
           <div className="flex items-center gap-1.5">
             <span
-              className={`inline-block w-2 h-2 rounded-full ${
+              className={`inline-block w-2.5 h-2.5 rounded-full ${
                 status === 'tracking'
                   ? 'bg-emerald-400 animate-pulse'
                   : status === 'loading'
-                    ? 'bg-amber-400'
-                    : 'bg-rose-400'
+                    ? 'bg-amber-400 animate-ping'
+                    : status === 'no_hand'
+                      ? 'bg-amber-400'
+                      : 'bg-rose-400'
               }`}
             />
-            <span className="text-[10px] text-slate-300 font-medium capitalize">
+            <span className="text-[10px] text-slate-300 font-medium">
               {status === 'tracking'
-                ? 'Active'
+                ? 'Hand Tracked'
                 : status === 'no_hand'
-                  ? 'No Hand'
+                  ? 'Looking for hand...'
                   : status === 'loading'
-                    ? 'Loading...'
+                    ? 'Loading AI...'
                     : status}
             </span>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-white text-xs pl-1"
+              className="text-slate-400 hover:text-white text-xs pl-1.5"
               title="Turn off Hand Mode"
             >
               ✕
@@ -180,19 +176,58 @@ export function HandTrackingOverlay({
           </div>
         </div>
 
-        {/* Video Canvas */}
-        <div className="relative rounded-lg overflow-hidden border border-slate-700 aspect-video bg-black/60">
+        {/* Video & Skeleton Overlay Viewport */}
+        <div className="relative rounded-lg overflow-hidden border border-slate-700 aspect-video bg-black/80 flex items-center justify-center">
+          {/* Native Hardware-Accelerated Video */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover transform -scale-x-1"
+          />
+
+          {/* Transparent Canvas for 21-Landmark Skeleton */}
           <canvas
             ref={canvasRef}
-            width={220}
-            height={165}
-            className="w-full h-full object-cover"
+            width={240}
+            height={180}
+            className="absolute inset-0 w-full h-full pointer-events-none"
           />
 
           {/* Current Gesture HUD Pill */}
-          <div className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full bg-black/75 border border-white/10 text-[10px] font-medium backdrop-blur-sm flex items-center gap-1">
+          <div className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full bg-black/80 border border-white/10 text-[10px] font-medium backdrop-blur-sm flex items-center gap-1">
             <Activity size={10} className="text-indigo-400" />
-            <span>{gestureLabelMap[gesture] || 'Idle'}</span>
+            <span>{gestureLabelMap[gesture] || 'Ready'}</span>
+          </div>
+
+          {/* No Hand Overlay Reminder */}
+          {status === 'no_hand' && (
+            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center p-2 text-white pointer-events-none">
+              <span className="text-xl">🖐️</span>
+              <span className="text-[10px] font-medium text-amber-200 mt-1">
+                Show palm to camera
+              </span>
+              <span className="text-[9px] text-slate-300">
+                (Tracks hands, not face)
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Quick Gesture Legend */}
+        <div className="grid grid-cols-3 gap-1 text-[9px] text-slate-300 bg-slate-900/60 p-1.5 rounded-md border border-slate-800">
+          <div className="text-center">
+            <span className="block font-semibold text-indigo-300">🤏 Pinch</span>
+            <span>Draw</span>
+          </div>
+          <div className="text-center">
+            <span className="block font-semibold text-emerald-300">✋ Palm</span>
+            <span>Orbit</span>
+          </div>
+          <div className="text-center">
+            <span className="block font-semibold text-amber-300">👍 Thumb</span>
+            <span>Undo</span>
           </div>
         </div>
 
@@ -204,7 +239,7 @@ export function HandTrackingOverlay({
               className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1"
             >
               <Sparkles size={11} />
-              <span>{showSettings ? 'Hide Settings' : 'Adjust Smoothness'}</span>
+              <span>{showSettings ? 'Hide Settings' : 'Smoothness'}</span>
             </button>
             <span className="text-[10px] text-slate-400 font-mono">{smoothness}%</span>
           </div>
@@ -212,7 +247,7 @@ export function HandTrackingOverlay({
           {showSettings && (
             <div className="pt-1 flex flex-col gap-1 border-t border-slate-800">
               <label className="text-[10px] text-slate-400 flex justify-between">
-                <span>Filter Smoothness</span>
+                <span>Filter Jitter Smoothing</span>
               </label>
               <input
                 type="range"
@@ -229,7 +264,7 @@ export function HandTrackingOverlay({
         {/* Privacy Note */}
         <div className="flex items-center gap-1 text-[9px] text-slate-400 border-t border-slate-800/80 pt-1.5">
           <ShieldCheck size={11} className="text-emerald-400 shrink-0" />
-          <span className="leading-tight">Video stays in your browser. Nothing is uploaded.</span>
+          <span className="leading-tight">100% on-device AI. No video or images leave your browser.</span>
         </div>
       </div>
     </div>

@@ -10,11 +10,6 @@ import { DrawingPlane } from '../scene/DrawingPlane';
 import { SelectionGizmo } from '../scene/SelectionGizmo';
 import { HandCursor3D } from '../hand/HandCursor';
 
-interface Canvas3DProps {
-  handCursorPos?: [number, number, number] | null;
-  isPinching?: boolean;
-}
-
 function SceneObjects() {
   const order = useSceneStore((s) => s.order);
 
@@ -27,10 +22,7 @@ function SceneObjects() {
   );
 }
 
-export function Canvas3D({
-  handCursorPos = null,
-  isPinching = false,
-}: Canvas3DProps) {
+export function Canvas3D() {
   const theme = useSceneStore((s) => s.theme);
   const isDark = theme === 'dark';
 
@@ -49,10 +41,8 @@ export function Canvas3D({
       <SceneObjects />
       <SelectionGizmo />
 
-      {/* 3D Hand Cursor */}
-      {handCursorPos && (
-        <HandCursor3D cursorPosition={handCursorPos} isPinching={isPinching} />
-      )}
+      {/* 3D Hand Cursor - reads shared mutable ref at 60 FPS in useFrame without React diffing */}
+      <HandCursor3D />
     </Canvas>
   );
 }

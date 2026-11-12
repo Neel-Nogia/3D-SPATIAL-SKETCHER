@@ -20,7 +20,7 @@ import { EmptyStateHint } from './components/EmptyStateHint';
 import { HandTrackingOverlay } from './hand/HandCursor';
 import { useHandTracking } from './hand/useHandTracking';
 import { HandToolBridge } from './hand/handTool';
-import type { Landmark, GestureType } from './hand/gestures';
+import { handCursorState } from './hand/handCursorBridge';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { exportToJSON } from './utils/export';
 import { validateProjectFile } from './utils/validation';
@@ -42,10 +42,6 @@ export default function App() {
 
   // Hand tracking state
   const [isHandModeEnabled, setIsHandModeEnabled] = useState(false);
-  const [handCursorPos, setHandCursorPos] = useState<[number, number, number] | null>(null);
-  const [isPinching, setIsPinching] = useState(false);
-  const [currentGesture, setCurrentGesture] = useState<GestureType>('idle');
-  const [currentLandmarks, setCurrentLandmarks] = useState<Landmark[] | null>(null);
   const [smoothness, setSmoothness] = useState(65);
 
   const handBridgeRef = useRef(new HandToolBridge());
@@ -73,8 +69,14 @@ export default function App() {
   );
 
   // Hand tracking lifecycle
-  const { status, videoElement, setOnFrame, updateSmoothness } =
-    useHandTracking(isHandModeEnabled, { onError: handleHandTrackingError });
+  const {
+    status,
+    mediaStream,
+    currentGesture,
+    setOnFrame,
+    setOverlayCanvas,
+    updateSmoothness,
+  } = useHandTracking(isHandModeEnabled, { onError: handleHandTrackingError });
 
   // Update filter smoothness
   useEffect(() => {
@@ -82,6 +84,7 @@ export default function App() {
   }, [smoothness, updateSmoothness]);
 
   // Hook into video frame processing to bridge hand gestures to Three.js canvas & tools
+  // Executes outside React state to achieve maximum 60 FPS performance without re-render storms
   useEffect(() => {
     if (!isHandModeEnabled) return;
 
@@ -91,33 +94,35 @@ export default function App() {
       const camera = (canvas as HTMLCanvasElement & { __r3f?: { camera: THREE.Camera } })?.__r3f?.camera;
 
       if (frameData.primaryHand) {
-        setCurrentLandmarks(frameData.primaryHand.landmarks);
-        setCurrentGesture(frameData.primaryHand.detection.gesture);
-        setIsPinching(frameData.primaryHand.detection.isPinching);
+        handCursorState.isPinching = frameData.primaryHand.detection.isPinching;
 
         if (camera) {
           const pt3D = handBridgeRef.current.handleHandFrame(frameData, camera);
-          setHandCursorPos(pt3D);
+          if (pt3D) {
+            handCursorState.position = pt3D;
+            handCursorState.visible = true;
+          } else {
+            handCursorState.visible = false;
+          }
         }
       } else {
-        setCurrentLandmarks(null);
-        setCurrentGesture('idle');
-        setIsPinching(false);
-        setHandCursorPos(null);
+        handCursorState.position = null;
+        handCursorState.visible = false;
+        handCursorState.isPinching = false;
       }
     });
   }, [isHandModeEnabled, setOnFrame]);
 
   const handleToggleHandMode = () => {
     if (!isHandModeEnabled) {
-      showToast('Starting webcam hand tracking...', 'info');
+      showToast('Starting camera for hand tracking...', 'info');
       setIsHandModeEnabled(true);
     } else {
       setIsHandModeEnabled(false);
-      setHandCursorPos(null);
-      setIsPinching(false);
-      setCurrentLandmarks(null);
-      setCurrentGesture('idle');
+      handCursorState.position = null;
+      handCursorState.visible = false;
+      handCursorState.isPinching = false;
+      handCursorState.gesture = 'idle';
       handBridgeRef.current.reset();
       showToast('Hand tracking mode disabled.', 'info');
     }
@@ -205,18 +210,18 @@ export default function App() {
         <main className="flex-1 relative overflow-hidden">
           <PlaneControls />
           <EmptyStateHint />
-          <Canvas3D handCursorPos={handCursorPos} isPinching={isPinching} />
+          <Canvas3D />
 
           {/* Hand Tracking Picture-in-Picture & Landmark HUD */}
           {isHandModeEnabled && (
             <HandTrackingOverlay
-              videoElement={videoElement}
-              landmarks={currentLandmarks}
+              mediaStream={mediaStream}
               gesture={currentGesture}
               status={status}
               smoothness={smoothness}
               onSmoothnessChange={setSmoothness}
-              onClose={() => setIsHandModeEnabled(false)}
+              onClose={handleToggleHandMode}
+              setOverlayCanvas={setOverlayCanvas}
             />
           )}
 

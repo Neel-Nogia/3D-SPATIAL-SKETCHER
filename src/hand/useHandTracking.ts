@@ -1,15 +1,17 @@
 /**
  * useHandTracking hook — Camera + MediaPipe HandLandmarker lifecycle.
- * - Manages webcam stream via navigator.mediaDevices.getUserMedia.
- * - Initializes MediaPipe FilesetResolver & HandLandmarker with GPU delegate and CPU fallback.
+ * - Manages webcam stream via navigator.mediaDevices.getUserMedia (optimized 480x360).
+ * - MediaPipe FilesetResolver & HandLandmarker with GPU delegate and CPU fallback.
  * - Caps inference loop to 30 fps to preserve 60 fps canvas rendering.
- * - Performs all inference outside React state (in refs) to eliminate re-render storms.
+ * - Performs all frame calculations outside React state to eliminate re-render storms.
+ * - Directly renders skeleton overlay to an HTMLCanvasElement context without React diffing.
  * - Cleanly releases media tracks and model resources when disabled.
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
-import { detectGesture, type GestureDetectionResult, type Landmark } from './gestures';
+import { detectGesture, type GestureDetectionResult, type Landmark, type GestureType } from './gestures';
 import { OneEuroFilter3D } from './smoothing';
+import { handCursorState } from './handCursorBridge';
 
 export type HandTrackingStatus =
   | 'off'
@@ -39,11 +41,26 @@ interface UseHandTrackingOptions {
   onError?: (msg: string) => void;
 }
 
+const CONNECTIONS: [number, number][] = [
+  [0, 1], [1, 2], [2, 3], [3, 4], // thumb
+  [0, 5], [5, 6], [6, 7], [7, 8], // index
+  [5, 9], [9, 10], [10, 11], [11, 12], // middle
+  [9, 13], [13, 14], [14, 15], [15, 16], // ring
+  [13, 17], [17, 18], [18, 19], [19, 20], // pinky
+  [0, 17], // palm base
+];
+
 export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOptions) {
   const [status, setStatus] = useState<HandTrackingStatus>('off');
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [currentGesture, setCurrentGesture] = useState<GestureType>('idle');
+
+  const currentStatusRef = useRef<HandTrackingStatus>('off');
+  const currentGestureRef = useRef<GestureType>('idle');
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
+  const videoFeedRef = useRef<HTMLVideoElement | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const lastVideoTimeRef = useRef<number>(-1);
@@ -56,8 +73,27 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
   // Callback subscriber for hand frame events
   const onFrameRef = useRef<((data: HandFrameData) => void) | null>(null);
 
+  const updateStatus = useCallback((newStatus: HandTrackingStatus) => {
+    if (currentStatusRef.current !== newStatus) {
+      currentStatusRef.current = newStatus;
+      setStatus(newStatus);
+    }
+  }, []);
+
+  const updateGesture = useCallback((newGesture: GestureType) => {
+    if (currentGestureRef.current !== newGesture) {
+      currentGestureRef.current = newGesture;
+      handCursorState.gesture = newGesture;
+      setCurrentGesture(newGesture);
+    }
+  }, []);
+
   const setOnFrame = useCallback((cb: (data: HandFrameData) => void) => {
     onFrameRef.current = cb;
+  }, []);
+
+  const setOverlayCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
+    overlayCanvasRef.current = canvas;
   }, []);
 
   const updateSmoothness = useCallback((smoothness: number) => {
@@ -75,6 +111,12 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
       streamRef.current = null;
     }
 
+    if (videoFeedRef.current) {
+      videoFeedRef.current.pause();
+      videoFeedRef.current.srcObject = null;
+      videoFeedRef.current = null;
+    }
+
     if (landmarkerRef.current) {
       try {
         landmarkerRef.current.close();
@@ -84,44 +126,45 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
       landmarkerRef.current = null;
     }
 
+    // Clear overlay canvas
+    if (overlayCanvasRef.current) {
+      const ctx = overlayCanvasRef.current.getContext('2d');
+      ctx?.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+    }
+
     filterRef.current.reset();
     wasPinchingRef.current = false;
-    setVideoElement(null);
+    handCursorState.position = null;
+    handCursorState.visible = false;
+    handCursorState.isPinching = false;
+    handCursorState.gesture = 'idle';
+
+    if (currentStatusRef.current !== 'off') {
+      currentStatusRef.current = 'off';
+      setStatus('off');
+      setMediaStream(null);
+    }
   }, []);
 
   useEffect(() => {
     if (!isEnabled) {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-      if (landmarkerRef.current) {
-        try {
-          landmarkerRef.current.close();
-        } catch {
-          // ignore
-        }
-        landmarkerRef.current = null;
-      }
       return;
     }
 
     let isCancelled = false;
 
     async function initMediaPipe() {
-      setStatus('loading');
+      updateStatus('loading');
 
-      // 1. Request camera
+      // 1. Request camera with optimized resolution to minimize CPU load
+      let stream: MediaStream;
       let video: HTMLVideoElement;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
+            width: { ideal: 480, max: 640 },
+            height: { ideal: 360, max: 480 },
+            frameRate: { ideal: 30, max: 30 },
             facingMode: 'user',
           },
         });
@@ -132,15 +175,16 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
         }
 
         streamRef.current = stream;
+        setMediaStream(stream);
 
-        // Create background video element for feeding frames to MediaPipe
+        // Internal video feed for MediaPipe input
         video = document.createElement('video');
         video.srcObject = stream;
         video.autoplay = true;
         video.playsInline = true;
         video.muted = true;
+        videoFeedRef.current = video;
         await video.play();
-        setVideoElement(video);
       } catch (err: unknown) {
         const error = err as Error;
         let msg = 'Failed to start camera.';
@@ -148,13 +192,13 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
 
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
           errStatus = 'permission_denied';
-          msg = 'Camera access was denied. Please allow camera permissions to use hand gestures.';
+          msg = 'Camera permission denied. Please allow camera access in browser settings.';
         } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
           errStatus = 'no_camera';
           msg = 'No camera found on this device.';
         }
 
-        setStatus(errStatus);
+        updateStatus(errStatus);
         options?.onError?.(msg);
         return;
       }
@@ -162,34 +206,34 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
       // 2. Initialize MediaPipe HandLandmarker
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
         );
 
         if (isCancelled) return;
 
+        const baseConfig = {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+          },
+          runningMode: 'VIDEO' as const,
+          numHands: 1, // Single hand provides 2x faster inference and zero hand-confusion
+          minHandDetectionConfidence: 0.3,
+          minHandPresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
+        };
+
         let landmarker: HandLandmarker;
         try {
-          // Attempt GPU delegate
           landmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
+            ...baseConfig,
+            baseOptions: { ...baseConfig.baseOptions, delegate: 'GPU' },
           });
         } catch {
-          // CPU Fallback
           console.warn('GPU delegate failed for MediaPipe, falling back to CPU');
           landmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'CPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
+            ...baseConfig,
+            baseOptions: { ...baseConfig.baseOptions, delegate: 'CPU' },
           });
         }
 
@@ -199,7 +243,7 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
         }
 
         landmarkerRef.current = landmarker;
-        setStatus('ready');
+        updateStatus('ready');
 
         // 3. Process video frames in requestAnimationFrame loop
         const processLoop = () => {
@@ -207,53 +251,79 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
 
           const now = performance.now();
           const landmarkerInstance = landmarkerRef.current;
+          const currentVideo = videoFeedRef.current;
 
-          // Cap inference at 30 fps (32 ms per inference)
+          // Cap inference at ~30 fps (33 ms)
           if (
-            video &&
+            currentVideo &&
             landmarkerInstance &&
-            video.readyState >= 2 &&
-            video.currentTime !== lastVideoTimeRef.current &&
-            now - lastInferenceTimeRef.current >= 32
+            currentVideo.readyState >= 2 &&
+            currentVideo.currentTime !== lastVideoTimeRef.current &&
+            now - lastInferenceTimeRef.current >= 30
           ) {
-            lastVideoTimeRef.current = video.currentTime;
+            lastVideoTimeRef.current = currentVideo.currentTime;
             lastInferenceTimeRef.current = now;
 
-            const results = landmarkerInstance.detectForVideo(video, now);
+            const results = landmarkerInstance.detectForVideo(currentVideo, now);
 
             if (results && results.landmarks && results.landmarks.length > 0) {
-              setStatus('tracking');
+              updateStatus('tracking');
 
-              // Primary hand = index 0
               const rawLandmarks1 = results.landmarks[0] as Landmark[];
               const detection1 = detectGesture(rawLandmarks1, wasPinchingRef.current);
               wasPinchingRef.current = detection1.isPinching;
 
+              updateGesture(detection1.gesture);
+
               // Landmark 8 = Index fingertip
-              // Mirror X so movement aligns intuitively with human mirror reflex
+              // Mirror X so movement aligns with user reflection
               const rawX = 1.0 - rawLandmarks1[8].x;
               const rawY = rawLandmarks1[8].y;
 
               const smoothed = filterRef.current.filter(rawX, rawY, 0, now);
 
-              // Secondary hand if detected
-              let secondaryHandData = null;
-              let twoHandDist: number | null = null;
+              // Directly render skeleton to overlay canvas if present (no React re-render!)
+              const canvas = overlayCanvasRef.current;
+              if (canvas) {
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.clearRect(0, 0, canvas.width, canvas.height);
+                  ctx.save();
 
-              if (results.landmarks.length > 1) {
-                const rawLandmarks2 = results.landmarks[1] as Landmark[];
-                const detection2 = detectGesture(rawLandmarks2, false);
-                secondaryHandData = {
-                  landmarks: rawLandmarks2,
-                  detection: detection2,
-                };
+                  // Draw bones
+                  ctx.strokeStyle = detection1.isPinching ? '#ef4444' : '#38bdf8';
+                  ctx.lineWidth = 2.5;
+                  ctx.lineCap = 'round';
+                  ctx.lineJoin = 'round';
 
-                // Distance between wrist centers of both hands
-                const p1 = detection1.palmCenter;
-                const p2 = detection2.palmCenter;
-                twoHandDist = Math.sqrt(
-                  Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2),
-                );
+                  ctx.beginPath();
+                  for (const [i, j] of CONNECTIONS) {
+                    const p1 = rawLandmarks1[i];
+                    const p2 = rawLandmarks1[j];
+                    if (p1 && p2) {
+                      ctx.moveTo((1.0 - p1.x) * canvas.width, p1.y * canvas.height);
+                      ctx.lineTo((1.0 - p2.x) * canvas.width, p2.y * canvas.height);
+                    }
+                  }
+                  ctx.stroke();
+
+                  // Draw joints
+                  for (let i = 0; i < rawLandmarks1.length; i++) {
+                    const pt = rawLandmarks1[i];
+                    const x = (1.0 - pt.x) * canvas.width;
+                    const y = pt.y * canvas.height;
+
+                    ctx.beginPath();
+                    const isFingertip = [4, 8, 12, 16, 20].includes(i);
+                    ctx.arc(x, y, isFingertip ? 4.5 : 2.5, 0, Math.PI * 2);
+                    ctx.fillStyle = isFingertip
+                      ? (detection1.isPinching ? '#f87171' : '#818cf8')
+                      : '#6366f1';
+                    ctx.fill();
+                  }
+
+                  ctx.restore();
+                }
               }
 
               if (onFrameRef.current) {
@@ -264,13 +334,23 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
                     cursor2D: { x: rawX, y: rawY },
                     smoothedCursor2D: { x: smoothed[0], y: smoothed[1] },
                   },
-                  secondaryHand: secondaryHandData,
-                  twoHandPinchDistance: twoHandDist,
+                  secondaryHand: null,
+                  twoHandPinchDistance: null,
                 });
               }
             } else {
-              setStatus('no_hand');
+              updateStatus('no_hand');
+              updateGesture('idle');
               wasPinchingRef.current = false;
+              handCursorState.visible = false;
+              handCursorState.position = null;
+
+              // Clear skeleton canvas
+              const canvas = overlayCanvasRef.current;
+              if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx?.clearRect(0, 0, canvas.width, canvas.height);
+              }
             }
           }
 
@@ -280,7 +360,7 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
         animationFrameIdRef.current = requestAnimationFrame(processLoop);
       } catch (err) {
         console.error('Failed to initialize MediaPipe HandLandmarker:', err);
-        setStatus('error');
+        updateStatus('error');
         options?.onError?.('Failed to load MediaPipe hand detection model.');
       }
     }
@@ -290,14 +370,15 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
     return () => {
       isCancelled = true;
       stopTracking();
-      setStatus('off');
     };
-  }, [isEnabled, stopTracking, options]);
+  }, [isEnabled, stopTracking, updateStatus, updateGesture, options]);
 
   return {
     status,
-    videoElement,
+    mediaStream,
+    currentGesture,
     setOnFrame,
+    setOverlayCanvas,
     updateSmoothness,
   };
 }
