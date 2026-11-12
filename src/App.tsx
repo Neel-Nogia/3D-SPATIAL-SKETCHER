@@ -1,43 +1,167 @@
 /**
  * Root App component.
- * Sets up the theme class and renders the main layout.
+ * Coordinates all UI layers, panels, shortcuts, persistence, and modals.
  */
+import { useEffect, useState, useRef } from 'react';
 import { useSceneStore } from './store/useSceneStore';
+import { useToastStore } from './store/useToastStore';
+import { initPersistence } from './store/persistence';
 import { Canvas3D } from './components/Canvas3D';
 import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { PlaneControls } from './components/PlaneControls';
 import { RightPanel } from './components/RightPanel';
+import { ExportModal } from './components/ExportModal';
+import { ShortcutsModal } from './components/ShortcutsModal';
+import { ToastContainer } from './components/Toast';
+import { EmptyStateHint } from './components/EmptyStateHint';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { exportToJSON } from './utils/export';
+import { validateProjectFile } from './utils/validation';
+import type { ProjectFile } from './types/scene';
+import { SlidersHorizontal } from 'lucide-react';
 
 export default function App() {
   const theme = useSceneStore((s) => s.theme);
-  useKeyboardShortcuts();
+  const projectName = useSceneStore((s) => s.projectName);
+  const objects = useSceneStore((s) => s.objects);
+  const order = useSceneStore((s) => s.order);
+  const loadProject = useSceneStore((s) => s.loadProject);
+  const showToast = useToastStore((s) => s.showToast);
+
+  // Modals state
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [showMobilePanel, setShowMobilePanel] = useState(false);
+
+  // Hidden JSON file input
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize debounced autosave & restore
+  useEffect(() => {
+    const cleanup = initPersistence();
+    return cleanup;
+  }, []);
+
+  // Keyboard shortcuts (? opens help modal)
+  useKeyboardShortcuts({
+    onOpenHelp: () => setIsShortcutsOpen((prev) => !prev),
+  });
+
+  const handleSaveJson = () => {
+    try {
+      const data: ProjectFile = {
+        version: 1,
+        name: projectName,
+        objects,
+        order,
+      };
+      exportToJSON(data, projectName || '3d-sketch');
+      showToast('Project saved to JSON file!', 'success');
+    } catch {
+      showToast('Failed to save project file.', 'error');
+    }
+  };
+
+  const handleOpenJsonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        const validation = validateProjectFile(parsed);
+
+        if (validation.success) {
+          loadProject(
+            validation.data.objects,
+            validation.data.order,
+            validation.data.name,
+          );
+          showToast(`Loaded "${validation.data.name}" (${validation.data.order.length} objects)`, 'success');
+        } else {
+          showToast(validation.error, 'error');
+        }
+      } catch (err) {
+        showToast('Could not parse JSON file. File may be corrupted.', 'error');
+        console.error(err);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input value so re-selecting the same file fires onChange
+    e.target.value = '';
+  };
 
   return (
-    <div className={`theme-${theme} w-screen h-screen flex flex-col`}
-         style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-      {/* Top bar */}
-      <TopBar />
+    <div
+      className={`theme-${theme} w-screen h-screen flex flex-col overflow-hidden`}
+      style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+    >
+      {/* Hidden file input for Open JSON */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,.sketch.json"
+        className="hidden"
+        onChange={handleFileChange}
+      />
 
-      {/* Main area: toolbar + canvas + right panel */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Top bar */}
+      <TopBar
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
+        onOpenExport={() => setIsExportOpen(true)}
+        onSaveJson={handleSaveJson}
+        onOpenJson={handleOpenJsonClick}
+      />
+
+      {/* Main workspace */}
+      <div className="flex flex-1 overflow-hidden relative">
         {/* Left toolbar */}
         <Toolbar />
 
-        {/* Center: 3D canvas */}
-        <div className="flex-1 relative">
+        {/* Center: 3D canvas viewport */}
+        <main className="flex-1 relative overflow-hidden">
           <PlaneControls />
+          <EmptyStateHint />
           <Canvas3D />
-        </div>
 
-        {/* Right panel: Properties and Layers */}
-        <RightPanel />
+          {/* Mobile Panel Toggle Button (visible on screens < 768px) */}
+          <button
+            onClick={() => setShowMobilePanel((p) => !p)}
+            className="md:hidden absolute bottom-3 right-3 z-20 p-2.5 rounded-full bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 transition-colors"
+            title="Toggle Properties & Layers Panel"
+            aria-label="Toggle Properties & Layers Panel"
+          >
+            <SlidersHorizontal size={18} />
+          </button>
+        </main>
+
+        {/* Right panel: Desktop (always visible) / Mobile Drawer */}
+        <div
+          className={`h-full z-30 transition-transform duration-200 md:relative md:translate-x-0 ${
+            showMobilePanel
+              ? 'fixed inset-y-0 right-0 translate-x-0 shadow-2xl'
+              : 'fixed inset-y-0 right-0 translate-x-full md:translate-x-0'
+          }`}
+        >
+          <RightPanel />
+        </div>
       </div>
 
       {/* Bottom status bar */}
       <StatusBar />
+
+      {/* Modals & Overlays */}
+      <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
+      <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
+      <ToastContainer />
     </div>
   );
 }
