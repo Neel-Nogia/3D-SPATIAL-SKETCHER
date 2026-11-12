@@ -6,7 +6,22 @@
  * 2. Register it in src/tools/registry.ts.
  * That's it! The canvas component doesn't need to change.
  */
-import type { Vec3 } from '../types/scene';
+import type { Vec3, ObjectType } from '../types/scene';
+
+/** Transient preview shape rendered while dragging */
+export interface DraftShape {
+  type: ObjectType;
+  points?: Vec3[];
+  size?: Vec3;
+  radius?: number;
+  height?: number;
+  position: Vec3;
+  rotation?: Vec3;
+  color: string;
+  thickness: number;
+  opacity: number;
+  wireframe: boolean;
+}
 
 /** Context passed to tool event handlers */
 export interface ToolContext {
@@ -36,6 +51,6 @@ export interface Tool {
   onPointerMove: (ctx: ToolContext) => void;
   /** Called when the pointer is released */
   onPointerUp: (ctx: ToolContext) => void;
-  /** Optional: returns JSX to render a live preview while dragging */
-  renderPreview?: () => React.ReactNode | null;
+  /** Optional cancel / reset */
+  reset?: () => void;
 }

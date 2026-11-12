@@ -34,6 +34,15 @@ interface SceneStore {
   // --- Drawing plane ---
   drawingPlane: DrawingPlane;
   planeOffset: number;
+  showPlaneHelper: boolean;
+
+  // --- Active Drawing Style ---
+  currentStyle: {
+    color: string;
+    thickness: number;
+    opacity: number;
+    wireframe: boolean;
+  };
 
   // --- Snapping ---
   snapEnabled: boolean;
@@ -60,6 +69,9 @@ interface SceneStore {
   setActiveTool: (tool: ToolId) => void;
   setDrawingPlane: (plane: DrawingPlane) => void;
   setPlaneOffset: (offset: number) => void;
+  setShowPlaneHelper: (show: boolean) => void;
+  togglePlaneHelper: () => void;
+  setCurrentStyle: (style: Partial<SceneStore['currentStyle']>) => void;
   setSnapEnabled: (enabled: boolean) => void;
   toggleSnap: () => void;
   setSnapSize: (size: SnapSize) => void;
@@ -137,6 +149,13 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   activeTool: 'select',
   drawingPlane: 'XZ',
   planeOffset: 0,
+  showPlaneHelper: true,
+  currentStyle: {
+    color: '#6366f1',
+    thickness: 3,
+    opacity: 1,
+    wireframe: false,
+  },
   snapEnabled: false,
   snapSize: 0.5,
   theme: getInitialTheme(),
@@ -150,6 +169,9 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   setActiveTool: (tool) => set({ activeTool: tool }),
   setDrawingPlane: (plane) => set({ drawingPlane: plane }),
   setPlaneOffset: (offset) => set({ planeOffset: Math.max(-20, Math.min(20, offset)) }),
+  setShowPlaneHelper: (show) => set({ showPlaneHelper: show }),
+  togglePlaneHelper: () => set((s) => ({ showPlaneHelper: !s.showPlaneHelper })),
+  setCurrentStyle: (style) => set((s) => ({ currentStyle: { ...s.currentStyle, ...style } })),
   setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   setSnapSize: (size) => set({ snapSize: size }),

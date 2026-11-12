@@ -6,6 +6,7 @@ import { Canvas } from '@react-three/fiber';
 import { useSceneStore } from '../store/useSceneStore';
 import { SceneHelpers } from '../scene/SceneHelpers';
 import { SceneObjectMesh } from '../scene/SceneObjectMesh';
+import { DrawingPlane } from '../scene/DrawingPlane';
 
 function SceneObjects() {
   const order = useSceneStore((s) => s.order);
@@ -34,6 +35,7 @@ export function Canvas3D() {
       gl={{ preserveDrawingBuffer: true, antialias: true }}
     >
       <SceneHelpers />
+      <DrawingPlane />
       <SceneObjects />
     </Canvas>
   );

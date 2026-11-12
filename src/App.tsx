@@ -7,9 +7,12 @@ import { Canvas3D } from './components/Canvas3D';
 import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
+import { PlaneControls } from './components/PlaneControls';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 export default function App() {
   const theme = useSceneStore((s) => s.theme);
+  useKeyboardShortcuts();
 
   return (
     <div className={`theme-${theme} w-screen h-screen flex flex-col`}
@@ -24,6 +27,7 @@ export default function App() {
 
         {/* Center: 3D canvas */}
         <div className="flex-1 relative">
+          <PlaneControls />
           <Canvas3D />
         </div>
       </div>
