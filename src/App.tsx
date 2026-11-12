@@ -1,8 +1,9 @@
 /**
  * Root App component.
- * Coordinates all UI layers, panels, shortcuts, persistence, and modals.
+ * Coordinates all UI layers, panels, shortcuts, persistence, hand tracking, and modals.
  */
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import * as THREE from 'three';
 import { useSceneStore } from './store/useSceneStore';
 import { useToastStore } from './store/useToastStore';
 import { initPersistence } from './store/persistence';
@@ -16,6 +17,10 @@ import { ExportModal } from './components/ExportModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { ToastContainer } from './components/Toast';
 import { EmptyStateHint } from './components/EmptyStateHint';
+import { HandTrackingOverlay } from './hand/HandCursor';
+import { useHandTracking } from './hand/useHandTracking';
+import { HandToolBridge } from './hand/handTool';
+import type { Landmark, GestureType } from './hand/gestures';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { exportToJSON } from './utils/export';
 import { validateProjectFile } from './utils/validation';
@@ -35,6 +40,16 @@ export default function App() {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [showMobilePanel, setShowMobilePanel] = useState(false);
 
+  // Hand tracking state
+  const [isHandModeEnabled, setIsHandModeEnabled] = useState(false);
+  const [handCursorPos, setHandCursorPos] = useState<[number, number, number] | null>(null);
+  const [isPinching, setIsPinching] = useState(false);
+  const [currentGesture, setCurrentGesture] = useState<GestureType>('idle');
+  const [currentLandmarks, setCurrentLandmarks] = useState<Landmark[] | null>(null);
+  const [smoothness, setSmoothness] = useState(65);
+
+  const handBridgeRef = useRef(new HandToolBridge());
+
   // Hidden JSON file input
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,6 +63,65 @@ export default function App() {
   useKeyboardShortcuts({
     onOpenHelp: () => setIsShortcutsOpen((prev) => !prev),
   });
+
+  const handleHandTrackingError = useCallback(
+    (msg: string) => {
+      showToast(msg, 'error');
+      setIsHandModeEnabled(false);
+    },
+    [showToast],
+  );
+
+  // Hand tracking lifecycle
+  const { status, videoElement, setOnFrame, updateSmoothness } =
+    useHandTracking(isHandModeEnabled, { onError: handleHandTrackingError });
+
+  // Update filter smoothness
+  useEffect(() => {
+    updateSmoothness(smoothness);
+  }, [smoothness, updateSmoothness]);
+
+  // Hook into video frame processing to bridge hand gestures to Three.js canvas & tools
+  useEffect(() => {
+    if (!isHandModeEnabled) return;
+
+    setOnFrame((frameData) => {
+      // Find R3F camera from canvas
+      const canvas = document.querySelector('canvas');
+      const camera = (canvas as HTMLCanvasElement & { __r3f?: { camera: THREE.Camera } })?.__r3f?.camera;
+
+      if (frameData.primaryHand) {
+        setCurrentLandmarks(frameData.primaryHand.landmarks);
+        setCurrentGesture(frameData.primaryHand.detection.gesture);
+        setIsPinching(frameData.primaryHand.detection.isPinching);
+
+        if (camera) {
+          const pt3D = handBridgeRef.current.handleHandFrame(frameData, camera);
+          setHandCursorPos(pt3D);
+        }
+      } else {
+        setCurrentLandmarks(null);
+        setCurrentGesture('idle');
+        setIsPinching(false);
+        setHandCursorPos(null);
+      }
+    });
+  }, [isHandModeEnabled, setOnFrame]);
+
+  const handleToggleHandMode = () => {
+    if (!isHandModeEnabled) {
+      showToast('Starting webcam hand tracking...', 'info');
+      setIsHandModeEnabled(true);
+    } else {
+      setIsHandModeEnabled(false);
+      setHandCursorPos(null);
+      setIsPinching(false);
+      setCurrentLandmarks(null);
+      setCurrentGesture('idle');
+      handBridgeRef.current.reset();
+      showToast('Hand tracking mode disabled.', 'info');
+    }
+  };
 
   const handleSaveJson = () => {
     try {
@@ -95,7 +169,6 @@ export default function App() {
       }
     };
     reader.readAsText(file);
-    // Reset input value so re-selecting the same file fires onChange
     e.target.value = '';
   };
 
@@ -119,6 +192,8 @@ export default function App() {
         onOpenExport={() => setIsExportOpen(true)}
         onSaveJson={handleSaveJson}
         onOpenJson={handleOpenJsonClick}
+        isHandModeEnabled={isHandModeEnabled}
+        onToggleHandMode={handleToggleHandMode}
       />
 
       {/* Main workspace */}
@@ -130,7 +205,20 @@ export default function App() {
         <main className="flex-1 relative overflow-hidden">
           <PlaneControls />
           <EmptyStateHint />
-          <Canvas3D />
+          <Canvas3D handCursorPos={handCursorPos} isPinching={isPinching} />
+
+          {/* Hand Tracking Picture-in-Picture & Landmark HUD */}
+          {isHandModeEnabled && (
+            <HandTrackingOverlay
+              videoElement={videoElement}
+              landmarks={currentLandmarks}
+              gesture={currentGesture}
+              status={status}
+              smoothness={smoothness}
+              onSmoothnessChange={setSmoothness}
+              onClose={() => setIsHandModeEnabled(false)}
+            />
+          )}
 
           {/* Mobile Panel Toggle Button (visible on screens < 768px) */}
           <button

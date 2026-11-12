@@ -8,6 +8,12 @@ import { SceneHelpers } from '../scene/SceneHelpers';
 import { SceneObjectMesh } from '../scene/SceneObjectMesh';
 import { DrawingPlane } from '../scene/DrawingPlane';
 import { SelectionGizmo } from '../scene/SelectionGizmo';
+import { HandCursor3D } from '../hand/HandCursor';
+
+interface Canvas3DProps {
+  handCursorPos?: [number, number, number] | null;
+  isPinching?: boolean;
+}
 
 function SceneObjects() {
   const order = useSceneStore((s) => s.order);
@@ -21,7 +27,10 @@ function SceneObjects() {
   );
 }
 
-export function Canvas3D() {
+export function Canvas3D({
+  handCursorPos = null,
+  isPinching = false,
+}: Canvas3DProps) {
   const theme = useSceneStore((s) => s.theme);
   const isDark = theme === 'dark';
 
@@ -39,6 +48,11 @@ export function Canvas3D() {
       <DrawingPlane />
       <SceneObjects />
       <SelectionGizmo />
+
+      {/* 3D Hand Cursor */}
+      {handCursorPos && (
+        <HandCursor3D cursorPosition={handCursorPos} isPinching={isPinching} />
+      )}
     </Canvas>
   );
 }

@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Edit2,
   Check,
+  Hand,
 } from 'lucide-react';
 
 interface TopBarProps {
@@ -23,6 +24,8 @@ interface TopBarProps {
   onOpenExport?: () => void;
   onSaveJson?: () => void;
   onOpenJson?: () => void;
+  isHandModeEnabled?: boolean;
+  onToggleHandMode?: () => void;
 }
 
 export function TopBar({
@@ -30,6 +33,8 @@ export function TopBar({
   onOpenExport,
   onSaveJson,
   onOpenJson,
+  isHandModeEnabled = false,
+  onToggleHandMode,
 }: TopBarProps) {
   const theme = useSceneStore((s) => s.theme);
   const toggleTheme = useSceneStore((s) => s.toggleTheme);
@@ -205,6 +210,21 @@ export function TopBar({
           title="Export 3D Model (PNG / GLTF / OBJ)"
         >
           <span>Export</span>
+        </button>
+
+        {/* Hand Mode Toggle */}
+        <button
+          onClick={onToggleHandMode}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded font-medium text-xs transition-all border ${
+            isHandModeEnabled
+              ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm animate-pulse'
+              : 'border-slate-300 dark:border-slate-700 hover:bg-black/5 dark:hover:bg-white/5'
+          }`}
+          title="Toggle Webcam Hand Gesture Control"
+          aria-label="Toggle Webcam Hand Tracking Mode"
+        >
+          <Hand size={14} className={isHandModeEnabled ? 'text-white' : 'text-indigo-400'} />
+          <span className="hidden sm:inline">{isHandModeEnabled ? 'Hand Mode ON' : 'Hand Mode'}</span>
         </button>
 
         <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-0.5" />
