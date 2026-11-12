@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* Base styles for the app */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Dark theme */
+.theme-dark {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-panel: #1e293b;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --border-color: #334155;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --surface: #0f172a;
+}
+
+/* Light theme */
+.theme-light {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-panel: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --surface: #f1f5f9;
+}
