@@ -101,9 +101,17 @@ const MAX_HISTORY = 100;
 
 /** Get the initial theme from localStorage or system preference */
 function getInitialTheme(): Theme {
-  const saved = localStorage.getItem('sketcher-theme');
-  if (saved === 'dark' || saved === 'light') return saved;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    const saved = localStorage.getItem('sketcher-theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+    if (typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+  } catch {
+    // Fallback if localStorage or matchMedia is restricted
+  }
+  return 'dark';
 }
 
 /** Helper to generate a name like "Box 3" */

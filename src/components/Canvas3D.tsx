@@ -5,6 +5,19 @@
 import { Canvas } from '@react-three/fiber';
 import { useSceneStore } from '../store/useSceneStore';
 import { SceneHelpers } from '../scene/SceneHelpers';
+import { SceneObjectMesh } from '../scene/SceneObjectMesh';
+
+function SceneObjects() {
+  const order = useSceneStore((s) => s.order);
+
+  return (
+    <group name="scene-objects-root">
+      {order.map((id) => (
+        <SceneObjectMesh key={id} id={id} />
+      ))}
+    </group>
+  );
+}
 
 export function Canvas3D() {
   const theme = useSceneStore((s) => s.theme);
@@ -21,6 +34,7 @@ export function Canvas3D() {
       gl={{ preserveDrawingBuffer: true, antialias: true }}
     >
       <SceneHelpers />
+      <SceneObjects />
     </Canvas>
   );
 }
