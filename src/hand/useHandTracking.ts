@@ -1,9 +1,10 @@
 /**
  * useHandTracking hook — Camera + MediaPipe HandLandmarker lifecycle.
- * - Manages webcam stream via navigator.mediaDevices.getUserMedia (optimized 480x360).
- * - MediaPipe FilesetResolver & HandLandmarker with GPU delegate and CPU fallback.
+ * - Multi-stage camera acquisition with fallback from ideal constraints to generic video.
+ * - Multi-CDN fallback for MediaPipe WASM and model asset files.
+ * - Safe HTMLVideoElement metadata resolution before play to prevent AbortError.
+ * - Detailed error diagnostics (device in use, permissions, overconstrained, offline).
  * - Caps inference loop to 30 fps to preserve 60 fps canvas rendering.
- * - Performs all frame calculations outside React state to eliminate re-render storms.
  * - Directly renders skeleton overlay to an HTMLCanvasElement context without React diffing.
  * - Cleanly releases media tracks and model resources when disabled.
  */
@@ -49,6 +50,51 @@ const CONNECTIONS: [number, number][] = [
   [13, 17], [17, 18], [18, 19], [19, 20], // pinky
   [0, 17], // palm base
 ];
+
+// Fallback CDN sources for WASM runtime and HandLandmarker model
+const WASM_SOURCES = [
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
+  'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
+];
+
+const MODEL_SOURCES = [
+  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm/hand_landmarker.task',
+];
+
+/**
+ * Robust camera stream acquisition with automated fallback to unconstrained video.
+ */
+async function acquireCameraStream(): Promise<MediaStream> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera access is not supported by this browser or requires a secure HTTPS connection.');
+  }
+
+  // Attempt 1: Ideal performance resolution
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'user',
+      },
+      audio: false,
+    });
+  } catch (err: unknown) {
+    const error = err as Error;
+    // If permission was denied or not found, don't retry since user explicitly rejected or has no device
+    if (error.name === 'NotAllowedError' || error.name === 'NotFoundError') {
+      throw error;
+    }
+    console.warn('Constrained camera request failed, retrying with basic video...', error);
+  }
+
+  // Attempt 2: Minimal fallback (supported on 100% of functional webcams)
+  return await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: false,
+  });
+}
 
 export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOptions) {
   const [status, setStatus] = useState<HandTrackingStatus>('off');
@@ -156,18 +202,11 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
     async function initMediaPipe() {
       updateStatus('loading');
 
-      // 1. Request camera with optimized resolution to minimize CPU load
+      // 1. Acquire camera stream with multi-stage fallback
       let stream: MediaStream;
       let video: HTMLVideoElement;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 480, max: 640 },
-            height: { ideal: 360, max: 480 },
-            frameRate: { ideal: 30, max: 30 },
-            facingMode: 'user',
-          },
-        });
+        stream = await acquireCameraStream();
 
         if (isCancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -179,12 +218,35 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
 
         // Internal video feed for MediaPipe input
         video = document.createElement('video');
-        video.srcObject = stream;
-        video.autoplay = true;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('muted', 'true');
         video.playsInline = true;
         video.muted = true;
+        video.autoplay = true;
+        video.srcObject = stream;
         videoFeedRef.current = video;
-        await video.play();
+
+        // Await stream frame availability before starting inference
+        await new Promise<void>((resolve) => {
+          if (video.readyState >= 2) {
+            resolve();
+            return;
+          }
+          const onData = () => {
+            video.removeEventListener('loadeddata', onData);
+            resolve();
+          };
+          video.addEventListener('loadeddata', onData);
+          setTimeout(resolve, 800);
+        });
+
+        if (isCancelled) return;
+
+        try {
+          await video.play();
+        } catch {
+          // Play rejection on hidden element is non-fatal
+        }
       } catch (err: unknown) {
         const error = err as Error;
         let msg = 'Failed to start camera.';
@@ -192,10 +254,15 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
 
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
           errStatus = 'permission_denied';
-          msg = 'Camera permission denied. Please allow camera access in browser settings.';
+          msg = 'Camera access denied. Please click the camera icon in your browser URL bar and allow access.';
         } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
           errStatus = 'no_camera';
-          msg = 'No camera found on this device.';
+          msg = 'No camera found. Please connect a webcam.';
+        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+          errStatus = 'error';
+          msg = 'Camera is in use by another application (e.g. Zoom, Teams, or another tab).';
+        } else if (error.message) {
+          msg = error.message;
         }
 
         updateStatus(errStatus);
@@ -203,43 +270,65 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
         return;
       }
 
-      // 2. Initialize MediaPipe HandLandmarker
+      // 2. Initialize MediaPipe HandLandmarker with CDN fallback
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
-        );
+        let vision = null;
+        for (const wasmUrl of WASM_SOURCES) {
+          try {
+            vision = await FilesetResolver.forVisionTasks(wasmUrl);
+            if (vision) break;
+          } catch (wErr) {
+            console.warn(`WASM CDN ${wasmUrl} unavailable, trying backup...`, wErr);
+          }
+        }
 
         if (isCancelled) return;
 
-        const baseConfig = {
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-          },
-          runningMode: 'VIDEO' as const,
-          numHands: 1, // Single hand provides 2x faster inference and zero hand-confusion
-          minHandDetectionConfidence: 0.3,
-          minHandPresenceConfidence: 0.3,
-          minTrackingConfidence: 0.3,
-        };
+        if (!vision) {
+          throw new Error('Failed to load MediaPipe vision runtime.');
+        }
 
-        let landmarker: HandLandmarker;
-        try {
-          landmarker = await HandLandmarker.createFromOptions(vision, {
-            ...baseConfig,
-            baseOptions: { ...baseConfig.baseOptions, delegate: 'GPU' },
-          });
-        } catch {
-          console.warn('GPU delegate failed for MediaPipe, falling back to CPU');
-          landmarker = await HandLandmarker.createFromOptions(vision, {
-            ...baseConfig,
-            baseOptions: { ...baseConfig.baseOptions, delegate: 'CPU' },
-          });
+        let landmarker: HandLandmarker | null = null;
+        for (const modelUrl of MODEL_SOURCES) {
+          const baseConfig = {
+            baseOptions: {
+              modelAssetPath: modelUrl,
+            },
+            runningMode: 'VIDEO' as const,
+            numHands: 1,
+            minHandDetectionConfidence: 0.3,
+            minHandPresenceConfidence: 0.3,
+            minTrackingConfidence: 0.3,
+          };
+
+          try {
+            // Attempt GPU delegate
+            landmarker = await HandLandmarker.createFromOptions(vision, {
+              ...baseConfig,
+              baseOptions: { ...baseConfig.baseOptions, delegate: 'GPU' },
+            });
+            if (landmarker) break;
+          } catch {
+            // Fallback to CPU delegate
+            try {
+              landmarker = await HandLandmarker.createFromOptions(vision, {
+                ...baseConfig,
+                baseOptions: { ...baseConfig.baseOptions, delegate: 'CPU' },
+              });
+              if (landmarker) break;
+            } catch (mErr) {
+              console.warn(`Model at ${modelUrl} failed, trying backup...`, mErr);
+            }
+          }
         }
 
         if (isCancelled) {
-          landmarker.close();
+          landmarker?.close();
           return;
+        }
+
+        if (!landmarker) {
+          throw new Error('Could not download hand tracking model. Please check your internet connection.');
         }
 
         landmarkerRef.current = landmarker;
@@ -358,10 +447,11 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
         };
 
         animationFrameIdRef.current = requestAnimationFrame(processLoop);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to initialize MediaPipe HandLandmarker:', err);
         updateStatus('error');
-        options?.onError?.('Failed to load MediaPipe hand detection model.');
+        const error = err as Error;
+        options?.onError?.(error.message || 'Failed to load MediaPipe hand detection model.');
       }
     }
 

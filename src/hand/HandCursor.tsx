@@ -213,6 +213,45 @@ export function HandTrackingOverlay({
               </span>
             </div>
           )}
+
+          {/* Camera Permission Denied Overlay */}
+          {status === 'permission_denied' && (
+            <div className="absolute inset-0 bg-rose-950/85 flex flex-col items-center justify-center text-center p-3 text-white">
+              <span className="text-xl">🔒</span>
+              <span className="text-xs font-semibold text-rose-200 mt-1">
+                Camera Access Blocked
+              </span>
+              <span className="text-[10px] text-slate-300 mt-1">
+                Click the lock/camera icon in your URL bar and select &quot;Allow&quot;.
+              </span>
+            </div>
+          )}
+
+          {/* Camera Error or In Use Overlay */}
+          {status === 'error' && (
+            <div className="absolute inset-0 bg-rose-950/85 flex flex-col items-center justify-center text-center p-3 text-white">
+              <span className="text-xl">⚠️</span>
+              <span className="text-xs font-semibold text-rose-200 mt-1">
+                Camera Unavailable
+              </span>
+              <span className="text-[10px] text-slate-300 mt-1">
+                Close other apps using the webcam (Zoom, Teams) or check connection.
+              </span>
+            </div>
+          )}
+
+          {/* No Camera Device Found Overlay */}
+          {status === 'no_camera' && (
+            <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center text-center p-3 text-white">
+              <span className="text-xl">📷</span>
+              <span className="text-xs font-semibold text-amber-200 mt-1">
+                No Webcam Detected
+              </span>
+              <span className="text-[10px] text-slate-300 mt-1">
+                You can sketch with mouse, trackpad, or touch anytime!
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Quick Gesture Legend */}

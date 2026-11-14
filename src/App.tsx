@@ -63,7 +63,6 @@ export default function App() {
   const handleHandTrackingError = useCallback(
     (msg: string) => {
       showToast(msg, 'error');
-      setIsHandModeEnabled(false);
     },
     [showToast],
   );
