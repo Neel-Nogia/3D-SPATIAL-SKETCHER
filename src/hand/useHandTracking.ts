@@ -146,6 +146,11 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
   const currentGestureRef = useRef<GestureType>('idle');
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  });
+
   const streamRef = useRef<MediaStream | null>(null);
   const videoFeedRef = useRef<HTMLVideoElement | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
@@ -325,7 +330,7 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
 
         setDiagnostics((prev) => ({ ...prev, errorMessage: msg }));
         updateStatus(errStatus);
-        options?.onError?.(msg);
+        optionsRef.current?.onError?.(msg);
         return;
       }
 
@@ -521,7 +526,7 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
       isCancelled = true;
       stopTracking();
     };
-  }, [isEnabled, stopTracking, updateStatus, updateGesture, options]);
+  }, [isEnabled, stopTracking, updateStatus, updateGesture]);
 
   return {
     status,

@@ -101,10 +101,27 @@ export function HandTrackingOverlay({
 
   // Connect mediaStream directly to HTML video element for hardware GPU acceleration
   useEffect(() => {
-    if (videoRef.current && mediaStream) {
-      videoRef.current.srcObject = mediaStream;
-      videoRef.current.play().catch(() => {});
+    const video = videoRef.current;
+    if (!video || !mediaStream) return;
+
+    video.srcObject = mediaStream;
+    video.muted = true;
+    video.playsInline = true;
+
+    const playVideo = () => {
+      video.play().catch((err) => {
+        console.warn('Overlay video play warning:', err);
+      });
+    };
+
+    video.addEventListener('loadedmetadata', playVideo);
+    if (video.readyState >= 1) {
+      playVideo();
     }
+
+    return () => {
+      video.removeEventListener('loadedmetadata', playVideo);
+    };
   }, [mediaStream]);
 
   // Register overlay canvas ref to hook

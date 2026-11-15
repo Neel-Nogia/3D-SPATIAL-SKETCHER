@@ -2,7 +2,7 @@
  * Root App component.
  * Coordinates all UI layers, panels, shortcuts, persistence, hand tracking, and modals.
  */
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { useSceneStore } from './store/useSceneStore';
 import { useToastStore } from './store/useToastStore';
@@ -67,6 +67,11 @@ export default function App() {
     [showToast],
   );
 
+  const handTrackingOptions = useMemo(
+    () => ({ onError: handleHandTrackingError }),
+    [handleHandTrackingError],
+  );
+
   // Hand tracking lifecycle
   const {
     status,
@@ -76,7 +81,7 @@ export default function App() {
     setOnFrame,
     setOverlayCanvas,
     updateSmoothness,
-  } = useHandTracking(isHandModeEnabled, { onError: handleHandTrackingError });
+  } = useHandTracking(isHandModeEnabled, handTrackingOptions);
 
   // Update filter smoothness
   useEffect(() => {
