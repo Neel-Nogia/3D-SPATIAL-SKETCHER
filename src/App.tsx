@@ -72,6 +72,7 @@ export default function App() {
     status,
     mediaStream,
     currentGesture,
+    diagnostics,
     setOnFrame,
     setOverlayCanvas,
     updateSmoothness,
@@ -217,6 +218,7 @@ export default function App() {
               mediaStream={mediaStream}
               gesture={currentGesture}
               status={status}
+              diagnostics={diagnostics}
               smoothness={smoothness}
               onSmoothnessChange={setSmoothness}
               onClose={handleToggleHandMode}
