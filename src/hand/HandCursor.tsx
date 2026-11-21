@@ -109,7 +109,8 @@ export function HandTrackingOverlay({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [viewSize, setViewSize] = useState<'compact' | 'normal' | 'cinema'>('normal');
+  const [videoAspect, setVideoAspect] = useState<number>(16 / 9);
 
   // Connect mediaStream directly to HTML video element for hardware GPU acceleration
   useEffect(() => {
@@ -121,6 +122,9 @@ export function HandTrackingOverlay({
     video.playsInline = true;
 
     const playVideo = () => {
+      if (video.videoWidth && video.videoHeight) {
+        setVideoAspect(video.videoWidth / video.videoHeight);
+      }
       video.play().catch((err) => {
         console.warn('Overlay video play warning:', err);
       });
@@ -149,22 +153,34 @@ export function HandTrackingOverlay({
     open_palm: '✋ Open Palm (Orbit)',
     fist: '✊ Fist (Rest)',
     thumbs_up: '👍 Thumbs Up (Undo)',
-    idle: '👋 Ready',
+    idle: '👋 Ready to Draw',
   };
 
   const isCameraLive = !!mediaStream;
 
+  const cycleViewSize = () => {
+    setViewSize((cur) => {
+      if (cur === 'compact') return 'normal';
+      if (cur === 'normal') return 'cinema';
+      return 'compact';
+    });
+  };
+
+  const sizeClasses = {
+    compact: 'w-[320px] max-w-[320px]',
+    normal: 'w-[460px] max-w-[460px]',
+    cinema: 'w-[600px] max-w-[600px]',
+  }[viewSize];
+
   return (
     <div
-      className={`absolute bottom-12 right-3 z-30 flex flex-col items-end gap-1.5 select-none transition-all duration-200 ${
-        isExpanded ? 'max-w-[420px] w-[420px]' : 'max-w-[300px] w-72'
-      }`}
+      className={`absolute bottom-10 right-3 z-30 flex flex-col items-end gap-1.5 select-none transition-all duration-200 ${sizeClasses}`}
     >
       {/* Instruction Guidance Pill */}
       {status === 'no_hand' && isCameraLive && (
         <div className="bg-amber-500/90 text-slate-950 font-semibold px-3 py-1.5 rounded-lg text-xs shadow-lg flex items-center gap-1.5 animate-bounce">
           <Hand size={14} className="shrink-0" />
-          <span>Raise hand in view of camera (face & hands visible)</span>
+          <span>Keep head & hands in camera view — Pinch to draw freely in 3D!</span>
         </div>
       )}
 
@@ -172,8 +188,8 @@ export function HandTrackingOverlay({
       <div
         className="w-full rounded-xl border shadow-2xl p-3 backdrop-blur-md flex flex-col gap-2.5"
         style={{
-          background: 'rgba(15, 23, 42, 0.95)',
-          borderColor: 'rgba(99, 102, 241, 0.4)',
+          background: 'rgba(15, 23, 42, 0.96)',
+          borderColor: 'rgba(99, 102, 241, 0.5)',
           color: '#f8fafc',
         }}
       >
@@ -216,13 +232,25 @@ export function HandTrackingOverlay({
                           : 'Camera Error'}
             </span>
 
-            {/* Resize button */}
+            {/* Cycle view size button */}
             <button
-              onClick={() => setIsExpanded((e) => !e)}
-              className="text-slate-400 hover:text-white p-1 rounded hover:bg-white/10"
-              title={isExpanded ? 'Compact camera view' : 'Expand camera view'}
+              onClick={cycleViewSize}
+              className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded text-[10px] border border-slate-700 hover:bg-white/10 flex items-center gap-1"
+              title={`Current size: ${viewSize}. Click to toggle.`}
             >
-              {isExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              {viewSize === 'cinema' ? (
+                <>
+                  <Minimize2 size={11} /> <span>Cinema</span>
+                </>
+              ) : viewSize === 'normal' ? (
+                <>
+                  <Maximize2 size={11} /> <span>Large</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 size={11} /> <span>Compact</span>
+                </>
+              )}
             </button>
 
             {/* Close button */}
@@ -236,26 +264,25 @@ export function HandTrackingOverlay({
           </div>
         </div>
 
-        {/* Video & Skeleton Overlay Viewport (object-contain so face and both hands are never cropped) */}
+        {/* Video & Skeleton Overlay Viewport — Uncropped matching camera aspect ratio */}
         <div
-          className={`relative rounded-lg overflow-hidden border border-slate-700 bg-black flex items-center justify-center transition-all duration-200 ${
-            isExpanded ? 'aspect-4/3 min-h-[260px]' : 'aspect-video min-h-[160px]'
-          }`}
+          className="relative rounded-lg overflow-hidden border border-slate-700 bg-black flex items-center justify-center transition-all duration-200"
+          style={{ aspectRatio: `${videoAspect}` }}
         >
-          {/* Native Hardware-Accelerated Video (object-contain preserves full camera FOV) */}
+          {/* Native Hardware-Accelerated Video (mirrored like a mirror) */}
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-contain transform -scale-x-1 bg-black"
+            className="w-full h-full object-cover transform -scale-x-1 bg-black"
           />
 
           {/* Transparent Canvas for 21-Landmark Skeleton */}
           <canvas
             ref={canvasRef}
-            width={isExpanded ? 420 : 280}
-            height={isExpanded ? 315 : 210}
+            width={640}
+            height={Math.round(640 / videoAspect)}
             className="absolute inset-0 w-full h-full pointer-events-none"
           />
 

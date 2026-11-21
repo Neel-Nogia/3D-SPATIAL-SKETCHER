@@ -20,9 +20,12 @@ export class HandToolBridge {
   private thumbsUpStartTime: number | null = null;
   private lastUndoTime = 0;
   private lastTwoHandDist: number | null = null;
+  private lastPoint3D: Vec3 | null = null;
 
   /**
    * Projects 2D normalized screen coordinates [0, 1] through camera to intersect the active 3D drawing plane.
+   * If aiming above horizon or away from primary plane, falls back to a camera-facing plane
+   * so the user can sketch freely anywhere in the camera view without strokes abruptly dying.
    */
   projectToPlane(
     screenX: number,
@@ -30,7 +33,7 @@ export class HandToolBridge {
     camera: THREE.Camera,
     plane: DrawingPlane,
     offset: number,
-  ): Vec3 | null {
+  ): Vec3 {
     // Convert [0, 1] screen coords to Normalized Device Coordinates (NDC) [-1, 1]
     const ndcX = screenX * 2 - 1;
     const ndcY = -(screenY * 2 - 1);
@@ -54,9 +57,27 @@ export class HandToolBridge {
 
     const hit = new THREE.Vector3();
     const result = raycaster.ray.intersectPlane(mathPlane, hit);
-    if (!result) return null;
 
-    return [hit.x, hit.y, hit.z];
+    // If intersection exists and is within practical drawing boundary
+    if (result && hit.distanceTo(camera.position) < 60) {
+      return [hit.x, hit.y, hit.z];
+    }
+
+    // Fallback: Plane perpendicular to camera view direction passing through (0, offset, 0)
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    const viewPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+      camDir.clone().negate(),
+      new THREE.Vector3(0, offset, 0),
+    );
+    const fallbackHit = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(viewPlane, fallbackHit)) {
+      return [fallbackHit.x, fallbackHit.y, fallbackHit.z];
+    }
+
+    // Secondary fallback: Fixed depth point along ray
+    const forwardPoint = raycaster.ray.at(10, new THREE.Vector3());
+    return [forwardPoint.x, forwardPoint.y, forwardPoint.z];
   }
 
   /**
@@ -69,8 +90,8 @@ export class HandToolBridge {
     onZoomDelta?: (delta: number) => void,
   ): Vec3 | null {
     if (!frame.primaryHand) {
-      if (this.isPinching) {
-        this.triggerPointerUp([0, 0, 0]);
+      if (this.isPinching && this.lastPoint3D) {
+        this.triggerPointerUp(this.lastPoint3D);
       }
       this.lastPalmCenter = null;
       this.lastSecPalmCenter = null;
@@ -91,6 +112,7 @@ export class HandToolBridge {
       drawingPlane,
       planeOffset,
     );
+    this.lastPoint3D = point3D;
 
     const now = performance.now();
 
@@ -140,7 +162,7 @@ export class HandToolBridge {
 
     // Single-Hand OPEN PALM -> Gyroscope Orbit fallback
     if (!frame.secondaryHand && detection.gesture === 'open_palm') {
-      if (this.isPinching && point3D) {
+      if (this.isPinching) {
         this.triggerPointerUp(point3D);
       }
 
@@ -158,18 +180,16 @@ export class HandToolBridge {
     }
 
     // Primary Hand: PINCH -> Draw / PointerDown / PointerMove / PointerUp
-    if (point3D) {
-      if (detection.isPinching) {
-        if (!this.isPinching) {
-          this.isPinching = true;
-          this.triggerPointerDown(point3D);
-        } else {
-          this.triggerPointerMove(point3D);
-        }
+    if (detection.isPinching) {
+      if (!this.isPinching) {
+        this.isPinching = true;
+        this.triggerPointerDown(point3D);
       } else {
-        if (this.isPinching) {
-          this.triggerPointerUp(point3D);
-        }
+        this.triggerPointerMove(point3D);
+      }
+    } else {
+      if (this.isPinching) {
+        this.triggerPointerUp(point3D);
       }
     }
 
@@ -222,5 +242,6 @@ export class HandToolBridge {
     this.lastSecPalmCenter = null;
     this.thumbsUpStartTime = null;
     this.lastTwoHandDist = null;
+    this.lastPoint3D = null;
   }
 }

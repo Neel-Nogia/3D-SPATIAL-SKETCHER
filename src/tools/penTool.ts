@@ -25,7 +25,7 @@ export class PenTool implements Tool {
 
   private points: Vec3[] = [];
   private isDrawing = false;
-  private minDistance = 0.05;
+  private minDistance = 0.03;
 
   onPointerDown(ctx: ToolContext): void {
     this.isDrawing = true;
@@ -67,14 +67,20 @@ export class PenTool implements Tool {
     if (!this.isDrawing) return;
     this.isDrawing = false;
 
-    if (this.points.length >= 2) {
-      // Simplify stroke points with RDP algorithm
-      const simplified = simplifyPoints(this.points, 0.04);
+    if (this.points.length >= 1) {
+      // If single point (e.g. quick tap or dot), create a visible micro-segment
+      const finalPoints: Vec3[] =
+        this.points.length === 1
+          ? [
+              this.points[0],
+              [this.points[0][0] + 0.015, this.points[0][1] + 0.015, this.points[0][2]] as Vec3,
+            ]
+          : simplifyPoints(this.points, 0.03);
 
       const style = useSceneStore.getState().currentStyle;
       useSceneStore.getState().addObject({
         type: 'stroke',
-        points: simplified,
+        points: finalPoints,
         position: [0, 0, 0],
         rotation: [0, 0, 0],
         scale: [1, 1, 1],

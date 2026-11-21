@@ -3,7 +3,6 @@
  * Coordinates all UI layers, panels, shortcuts, persistence, hand tracking, and modals.
  */
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import * as THREE from 'three';
 import { useSceneStore } from './store/useSceneStore';
 import { useToastStore } from './store/useToastStore';
 import { initPersistence } from './store/persistence';
@@ -24,7 +23,7 @@ import { handCursorState } from './hand/handCursorBridge';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { exportToJSON } from './utils/export';
 import { validateProjectFile } from './utils/validation';
-import { activeOrbitControls } from './scene/cameraControlsBridge';
+import { activeOrbitControls, activeCamera } from './scene/cameraControlsBridge';
 import type { ProjectFile } from './types/scene';
 import { SlidersHorizontal } from 'lucide-react';
 
@@ -95,9 +94,8 @@ export default function App() {
     if (!isHandModeEnabled) return;
 
     setOnFrame((frameData) => {
-      // Find R3F camera from canvas
-      const canvas = document.querySelector('canvas');
-      const camera = (canvas as HTMLCanvasElement & { __r3f?: { camera: THREE.Camera } })?.__r3f?.camera;
+      // Get live camera directly from R3F SceneHelpers
+      const camera = activeCamera.current;
 
       if (frameData.primaryHand) {
         handCursorState.isPinching = frameData.primaryHand.detection.isPinching;
@@ -147,8 +145,13 @@ export default function App() {
 
   const handleToggleHandMode = () => {
     if (!isHandModeEnabled) {
-      showToast('Starting camera for hand tracking...', 'info');
+      showToast('Hand Mode ON: Pinch to draw freely in 3D!', 'success');
       setIsHandModeEnabled(true);
+      // Auto-switch to pen if a non-drawing tool is currently active
+      const currentTool = useSceneStore.getState().activeTool;
+      if (['select', 'move', 'rotate', 'scale'].includes(currentTool)) {
+        useSceneStore.getState().setActiveTool('pen');
+      }
     } else {
       setIsHandModeEnabled(false);
       handCursorState.position = null;

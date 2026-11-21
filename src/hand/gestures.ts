@@ -98,8 +98,10 @@ export function detectGesture(
   // Hand reference size (wrist to middle MCP distance)
   const handSize = Math.max(1e-4, landmarkDist(wrist, middleMcp));
 
-  // Normalized pinch distance
-  const pinchDist = landmarkDist(thumbTip, indexTip);
+  // Normalized pinch distance: checks distance from thumb to index or middle fingertip
+  const pinchDistIndex = landmarkDist(thumbTip, indexTip);
+  const pinchDistMiddle = landmarkDist(thumbTip, middleTip);
+  const pinchDist = Math.min(pinchDistIndex, pinchDistMiddle);
   const normPinchDistance = pinchDist / handSize;
 
   // Hysteresis threshold check
@@ -127,9 +129,14 @@ export function detectGesture(
     };
   }
 
-  // 2. PINCH: thumb and index tips are touching / close
-  // Only classify as a fist if all 4 fingers and thumb are tightly curled below the palm MCP line
-  const isTightFist = allFingersCurled && !thumbExt && thumbTip.y > middleMcp.y && indexTip.y > middleMcp.y;
+  // 2. PINCH: thumb and finger tips are touching / close
+  // Only classify as a fist if all 4 fingers and thumb are curled back below the palm MCP line
+  const isTightFist =
+    allFingersCurled &&
+    !thumbExt &&
+    thumbTip.y >= middleMcp.y &&
+    indexTip.y >= middleMcp.y;
+
   if (isPinching && !isTightFist) {
     return {
       gesture: 'pinch',

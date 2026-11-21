@@ -54,8 +54,13 @@ function DraftPreview() {
 
   return (
     <group position={position} rotation={rotation} name="draft-preview">
-      {type === 'stroke' && threePoints.length >= 2 && (
-        <Line points={threePoints} color={color} lineWidth={thickness} opacity={opacity} />
+      {type === 'stroke' && threePoints.length >= 1 && (
+        <Line
+          points={threePoints.length === 1 ? [threePoints[0], threePoints[0]] : threePoints}
+          color={color}
+          lineWidth={thickness}
+          opacity={opacity}
+        />
       )}
       {type === 'line' && threePoints.length >= 2 && (
         <Line points={threePoints} color={color} lineWidth={thickness} opacity={opacity} />

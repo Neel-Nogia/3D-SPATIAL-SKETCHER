@@ -11,7 +11,7 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/dr
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import { useSceneStore } from '../store/useSceneStore';
-import { activeOrbitControls } from './cameraControlsBridge';
+import { activeOrbitControls, activeCamera } from './cameraControlsBridge';
 import type { CameraPreset } from '../types/scene';
 
 /** Preset camera positions */
@@ -57,10 +57,12 @@ export function SceneHelpers() {
 
   useEffect(() => {
     activeOrbitControls.current = controlsRef.current;
+    activeCamera.current = camera;
     return () => {
       activeOrbitControls.current = null;
+      activeCamera.current = null;
     };
-  });
+  }, [camera]);
 
   // Handle camera preset triggers
   useEffect(() => {

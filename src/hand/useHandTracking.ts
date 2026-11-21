@@ -109,12 +109,12 @@ async function acquireCameraStream(): Promise<MediaStream> {
     // Non-fatal if enumerateDevices is blocked before permissions
   }
 
-  // Attempt 1: Ideal 480p user-facing stream
+  // Attempt 1: Ideal 720p 16:9 user-facing stream (matches standard laptop & webcam sensor aspect ratio for uncropped FOV)
   try {
     return await navigator.mediaDevices.getUserMedia({
       video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
         facingMode: 'user',
       },
     });
@@ -123,10 +123,25 @@ async function acquireCameraStream(): Promise<MediaStream> {
     if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
       throw error;
     }
-    console.warn('Constrained camera request failed, falling back to minimal video...', error);
+    console.warn('1280x720 camera request failed, trying unconstrained user camera...', error);
   }
 
-  // Attempt 2: Minimal fallback (supported on 100% of working webcams)
+  // Attempt 2: Unconstrained user-facing camera (lets browser select full uncropped sensor lens)
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+      },
+    });
+  } catch (err: unknown) {
+    const error = err as Error;
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+      throw error;
+    }
+    console.warn('User camera request failed, falling back to minimal video...', error);
+  }
+
+  // Attempt 3: Minimal fallback (supported on 100% of working webcams)
   return await navigator.mediaDevices.getUserMedia({
     video: true,
   });
@@ -433,8 +448,15 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
 
               updateGesture(detection1.gesture);
 
-              const rawX1 = 1.0 - rawLandmarks1[8].x;
-              const rawY1 = rawLandmarks1[8].y;
+              // Stylus cursor: When pinching, use midpoint between thumb tip (4) and index tip (8) for a steady stylus
+              const indexTip1 = rawLandmarks1[8];
+              const thumbTip1 = rawLandmarks1[4];
+              const rawX1 = detection1.isPinching
+                ? 1.0 - (indexTip1.x + thumbTip1.x) / 2
+                : 1.0 - indexTip1.x;
+              const rawY1 = detection1.isPinching
+                ? (indexTip1.y + thumbTip1.y) / 2
+                : indexTip1.y;
               const smoothed1 = filterRef.current.filter(rawX1, rawY1, 0, now);
 
               // Hand 2 (Secondary / Spatial Gyroscope Hand) if present
