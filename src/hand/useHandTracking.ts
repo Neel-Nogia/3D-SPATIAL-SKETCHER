@@ -36,6 +36,8 @@ export interface HandFrameData {
   secondaryHand: {
     landmarks: Landmark[];
     detection: GestureDetectionResult;
+    cursor2D?: { x: number; y: number };
+    smoothedCursor2D?: { x: number; y: number };
   } | null;
   twoHandPinchDistance: number | null;
 }
@@ -359,7 +361,7 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
               modelAssetPath: modelUrl,
             },
             runningMode: 'VIDEO' as const,
-            numHands: 1,
+            numHands: 2, // Track BOTH hands for dual-hand spatial drawing & gyroscope navigation
             minHandDetectionConfidence: 0.3,
             minHandPresenceConfidence: 0.3,
             minTrackingConfidence: 0.3,
@@ -424,20 +426,42 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
             if (results && results.landmarks && results.landmarks.length > 0) {
               updateStatus('tracking');
 
+              // Hand 1 (Primary / Drawing Hand)
               const rawLandmarks1 = results.landmarks[0] as Landmark[];
               const detection1 = detectGesture(rawLandmarks1, wasPinchingRef.current);
               wasPinchingRef.current = detection1.isPinching;
 
               updateGesture(detection1.gesture);
 
-              // Landmark 8 = Index fingertip
-              // Mirror X so movement aligns with user reflection
-              const rawX = 1.0 - rawLandmarks1[8].x;
-              const rawY = rawLandmarks1[8].y;
+              const rawX1 = 1.0 - rawLandmarks1[8].x;
+              const rawY1 = rawLandmarks1[8].y;
+              const smoothed1 = filterRef.current.filter(rawX1, rawY1, 0, now);
 
-              const smoothed = filterRef.current.filter(rawX, rawY, 0, now);
+              // Hand 2 (Secondary / Spatial Gyroscope Hand) if present
+              let secondaryHandData = null;
+              let twoHandDist: number | null = null;
+              let rawLandmarks2: Landmark[] | null = null;
 
-              // Directly render skeleton to overlay canvas if present (no React re-render!)
+              if (results.landmarks.length > 1) {
+                rawLandmarks2 = results.landmarks[1] as Landmark[];
+                const detection2 = detectGesture(rawLandmarks2, false);
+                const rawX2 = 1.0 - rawLandmarks2[8].x;
+                const rawY2 = rawLandmarks2[8].y;
+
+                secondaryHandData = {
+                  landmarks: rawLandmarks2,
+                  detection: detection2,
+                  cursor2D: { x: rawX2, y: rawY2 },
+                  smoothedCursor2D: { x: rawX2, y: rawY2 },
+                };
+
+                twoHandDist = Math.hypot(
+                  detection1.palmCenter.x - detection2.palmCenter.x,
+                  detection1.palmCenter.y - detection2.palmCenter.y,
+                );
+              }
+
+              // Directly render dual skeletons to overlay canvas (no React re-render!)
               const canvas = overlayCanvasRef.current;
               if (canvas) {
                 const ctx = canvas.getContext('2d');
@@ -445,7 +469,7 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
                   ctx.clearRect(0, 0, canvas.width, canvas.height);
                   ctx.save();
 
-                  // Draw bones
+                  // 1. Draw Primary Hand (Indigo / Cyan or Red when pinching)
                   ctx.strokeStyle = detection1.isPinching ? '#ef4444' : '#38bdf8';
                   ctx.lineWidth = 2.5;
                   ctx.lineCap = 'round';
@@ -462,7 +486,6 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
                   }
                   ctx.stroke();
 
-                  // Draw joints
                   for (let i = 0; i < rawLandmarks1.length; i++) {
                     const pt = rawLandmarks1[i];
                     const x = (1.0 - pt.x) * canvas.width;
@@ -477,6 +500,35 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
                     ctx.fill();
                   }
 
+                  // 2. Draw Secondary Hand (Emerald / Green for Gyroscope Navigator)
+                  if (rawLandmarks2) {
+                    ctx.strokeStyle = '#10b981';
+                    ctx.lineWidth = 2.5;
+
+                    ctx.beginPath();
+                    for (const [i, j] of CONNECTIONS) {
+                      const p1 = rawLandmarks2[i];
+                      const p2 = rawLandmarks2[j];
+                      if (p1 && p2) {
+                        ctx.moveTo((1.0 - p1.x) * canvas.width, p1.y * canvas.height);
+                        ctx.lineTo((1.0 - p2.x) * canvas.width, p2.y * canvas.height);
+                      }
+                    }
+                    ctx.stroke();
+
+                    for (let i = 0; i < rawLandmarks2.length; i++) {
+                      const pt = rawLandmarks2[i];
+                      const x = (1.0 - pt.x) * canvas.width;
+                      const y = pt.y * canvas.height;
+
+                      ctx.beginPath();
+                      const isFingertip = [4, 8, 12, 16, 20].includes(i);
+                      ctx.arc(x, y, isFingertip ? 4.5 : 2.5, 0, Math.PI * 2);
+                      ctx.fillStyle = isFingertip ? '#34d399' : '#059669';
+                      ctx.fill();
+                    }
+                  }
+
                   ctx.restore();
                 }
               }
@@ -486,11 +538,11 @@ export function useHandTracking(isEnabled: boolean, options?: UseHandTrackingOpt
                   primaryHand: {
                     landmarks: rawLandmarks1,
                     detection: detection1,
-                    cursor2D: { x: rawX, y: rawY },
-                    smoothedCursor2D: { x: smoothed[0], y: smoothed[1] },
+                    cursor2D: { x: rawX1, y: rawY1 },
+                    smoothedCursor2D: { x: smoothed1[0], y: smoothed1[1] },
                   },
-                  secondaryHand: null,
-                  twoHandPinchDistance: null,
+                  secondaryHand: secondaryHandData,
+                  twoHandPinchDistance: twoHandDist,
                 });
               }
             } else {

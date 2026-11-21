@@ -2,10 +2,10 @@
  * HandCursor — 3D cursor mesh in the R3F scene + Webcam overlay preview HUD.
  * Renders:
  * - Glowing 3D sphere at the raycasted hand cursor position (updated at 60 FPS in R3F useFrame).
- * - Picture-in-picture mirrored camera preview with hardware-accelerated <video> tag.
- * - Hardware canvas overlay for 21 hand landmarks skeleton with zero React re-render lag.
+ * - Picture-in-picture mirrored camera preview with hardware-accelerated <video> tag (object-contain to show full face & hands).
+ * - Dual-hand 21-landmark skeleton rendering (Drawing hand in Cyan/Red, Gyroscope hand in Emerald Green).
  * - Real-time gesture badge (Pinch / Open Palm / Fist / Thumbs Up / Idle).
- * - Prominent hand guidance banner explaining hand tracking vs face tracking.
+ * - Expandable preview card (compact vs large) so face and both hands are clearly visible.
  * - Hardware diagnostics and troubleshooting drawer (device count, permissions, laptop Fn keys).
  * - Privacy banner: "Video stays in your browser. Nothing is uploaded."
  */
@@ -15,7 +15,18 @@ import * as THREE from 'three';
 import { handCursorState } from './handCursorBridge';
 import type { GestureType } from './gestures';
 import type { CameraDiagnosticInfo } from './useHandTracking';
-import { Video, ShieldCheck, Activity, Sparkles, Hand, HelpCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import {
+  Video,
+  ShieldCheck,
+  Activity,
+  Sparkles,
+  Hand,
+  HelpCircle,
+  CheckCircle,
+  AlertTriangle,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 
 /** 3D Glowing Cursor rendered inside Canvas3D, updated in useFrame with zero React diffing */
 export function HandCursor3D() {
@@ -98,6 +109,7 @@ export function HandTrackingOverlay({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Connect mediaStream directly to HTML video element for hardware GPU acceleration
   useEffect(() => {
@@ -143,29 +155,33 @@ export function HandTrackingOverlay({
   const isCameraLive = !!mediaStream;
 
   return (
-    <div className="absolute bottom-12 right-3 z-30 flex flex-col items-end gap-1.5 select-none max-w-[300px]">
+    <div
+      className={`absolute bottom-12 right-3 z-30 flex flex-col items-end gap-1.5 select-none transition-all duration-200 ${
+        isExpanded ? 'max-w-[420px] w-[420px]' : 'max-w-[300px] w-72'
+      }`}
+    >
       {/* Instruction Guidance Pill */}
       {status === 'no_hand' && isCameraLive && (
         <div className="bg-amber-500/90 text-slate-950 font-semibold px-3 py-1.5 rounded-lg text-xs shadow-lg flex items-center gap-1.5 animate-bounce">
           <Hand size={14} className="shrink-0" />
-          <span>Raise hand in front of camera (1-2 ft away)</span>
+          <span>Raise hand in view of camera (face & hands visible)</span>
         </div>
       )}
 
       {/* Preview Card */}
       <div
-        className="w-72 rounded-xl border shadow-2xl p-3 backdrop-blur-md flex flex-col gap-2.5"
+        className="w-full rounded-xl border shadow-2xl p-3 backdrop-blur-md flex flex-col gap-2.5"
         style={{
           background: 'rgba(15, 23, 42, 0.95)',
           borderColor: 'rgba(99, 102, 241, 0.4)',
           color: '#f8fafc',
         }}
       >
-        {/* Header with Status Chip */}
+        {/* Header with Status Chip & View Controls */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Video size={14} className="text-indigo-400" />
-            <span className="text-xs font-semibold">Webcam Hand Mode</span>
+            <span className="text-xs font-semibold">Webcam Spatial Mode</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -186,11 +202,11 @@ export function HandTrackingOverlay({
             />
             <span className="text-[10px] text-slate-300 font-medium">
               {status === 'tracking'
-                ? 'Hand Tracked'
+                ? 'Hands Tracked'
                 : status === 'camera_active'
                   ? 'Camera Active'
                   : status === 'no_hand'
-                    ? 'Looking for hand...'
+                    ? 'Show Hand...'
                     : status === 'loading'
                       ? 'Starting...'
                       : status === 'model_error'
@@ -199,9 +215,20 @@ export function HandTrackingOverlay({
                           ? 'Camera Active'
                           : 'Camera Error'}
             </span>
+
+            {/* Resize button */}
+            <button
+              onClick={() => setIsExpanded((e) => !e)}
+              className="text-slate-400 hover:text-white p-1 rounded hover:bg-white/10"
+              title={isExpanded ? 'Compact camera view' : 'Expand camera view'}
+            >
+              {isExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+            </button>
+
+            {/* Close button */}
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-white text-xs pl-1.5"
+              className="text-slate-400 hover:text-white text-xs pl-1"
               title="Turn off Hand Mode"
             >
               ✕
@@ -209,22 +236,26 @@ export function HandTrackingOverlay({
           </div>
         </div>
 
-        {/* Video & Skeleton Overlay Viewport */}
-        <div className="relative rounded-lg overflow-hidden border border-slate-700 aspect-video bg-black/80 flex items-center justify-center">
-          {/* Native Hardware-Accelerated Video */}
+        {/* Video & Skeleton Overlay Viewport (object-contain so face and both hands are never cropped) */}
+        <div
+          className={`relative rounded-lg overflow-hidden border border-slate-700 bg-black flex items-center justify-center transition-all duration-200 ${
+            isExpanded ? 'aspect-4/3 min-h-[260px]' : 'aspect-video min-h-[160px]'
+          }`}
+        >
+          {/* Native Hardware-Accelerated Video (object-contain preserves full camera FOV) */}
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-cover transform -scale-x-1"
+            className="w-full h-full object-contain transform -scale-x-1 bg-black"
           />
 
           {/* Transparent Canvas for 21-Landmark Skeleton */}
           <canvas
             ref={canvasRef}
-            width={240}
-            height={180}
+            width={isExpanded ? 420 : 280}
+            height={isExpanded ? 315 : 210}
             className="absolute inset-0 w-full h-full pointer-events-none"
           />
 
@@ -239,12 +270,12 @@ export function HandTrackingOverlay({
           {/* Prompt when Camera is active but no hand is in view */}
           {status === 'no_hand' && isCameraLive && (
             <div className="absolute inset-0 bg-black/35 flex flex-col items-center justify-center text-center p-2 text-white pointer-events-none">
-              <span className="text-xl">🖐️</span>
-              <span className="text-[10px] font-medium text-amber-200 mt-0.5">
-                Hold hand in view of camera
+              <span className="text-2xl">👐</span>
+              <span className="text-xs font-medium text-amber-200 mt-1">
+                Hold your hand(s) up in camera view
               </span>
-              <span className="text-[9px] text-slate-300">
-                (Palm facing camera, 1-2 ft away)
+              <span className="text-[10px] text-slate-300">
+                Pinch = Draw | Other hand = Gyroscope Orbit
               </span>
             </div>
           )}
@@ -296,19 +327,19 @@ export function HandTrackingOverlay({
           )}
         </div>
 
-        {/* Quick Gesture Legend */}
-        <div className="grid grid-cols-3 gap-1 text-[9px] text-slate-300 bg-slate-900/60 p-1.5 rounded-md border border-slate-800">
+        {/* Dual-Hand Spatial Gyroscope Legend */}
+        <div className="grid grid-cols-3 gap-1 text-[9px] text-slate-300 bg-slate-900/80 p-1.5 rounded-md border border-slate-800">
           <div className="text-center">
-            <span className="block font-semibold text-indigo-300">🤏 Pinch</span>
-            <span>Draw</span>
+            <span className="block font-semibold text-cyan-300">✍️ Pinch</span>
+            <span>Draw / Shape</span>
           </div>
           <div className="text-center">
-            <span className="block font-semibold text-emerald-300">✋ Palm</span>
-            <span>Orbit</span>
+            <span className="block font-semibold text-emerald-300">🧭 2nd Hand</span>
+            <span>Gyroscope Orbit</span>
           </div>
           <div className="text-center">
-            <span className="block font-semibold text-amber-300">👍 Thumb</span>
-            <span>Undo</span>
+            <span className="block font-semibold text-amber-300">🔍 2 Hands</span>
+            <span>Zoom In/Out</span>
           </div>
         </div>
 
@@ -357,12 +388,11 @@ export function HandTrackingOverlay({
                 </span>
               </div>
               <div className="border-t border-slate-800 pt-1 mt-1 text-[9px] text-slate-400 leading-tight">
-                💡 <b>Troubleshooting Tips:</b>
+                💡 <b>Dual-Hand Controls:</b>
                 <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-slate-300">
-                  <li>Check your laptop physical slider/privacy switch</li>
-                  <li>Check if camera Fn key is off (e.g. Fn+F10 on Asus/Lenovo)</li>
-                  <li>In Windows Settings: search &quot;Camera privacy settings&quot; and enable camera access</li>
-                  <li>You can always sketch with your mouse, trackpad, or touch screen!</li>
+                  <li><b>Drawing:</b> Touch thumb & index fingertip (Pinch) to sketch in 3D.</li>
+                  <li><b>Gyroscope:</b> Move your other hand in front of camera to orbit/rotate the 3D scene!</li>
+                  <li><b>Zoom:</b> Move both hands apart to zoom in, closer to zoom out.</li>
                 </ul>
               </div>
             </div>

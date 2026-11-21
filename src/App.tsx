@@ -24,6 +24,7 @@ import { handCursorState } from './hand/handCursorBridge';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { exportToJSON } from './utils/export';
 import { validateProjectFile } from './utils/validation';
+import { activeOrbitControls } from './scene/cameraControlsBridge';
 import type { ProjectFile } from './types/scene';
 import { SlidersHorizontal } from 'lucide-react';
 
@@ -102,7 +103,33 @@ export default function App() {
         handCursorState.isPinching = frameData.primaryHand.detection.isPinching;
 
         if (camera) {
-          const pt3D = handBridgeRef.current.handleHandFrame(frameData, camera);
+          const pt3D = handBridgeRef.current.handleHandFrame(
+            frameData,
+            camera,
+            (deltaX, deltaY) => {
+              if (activeOrbitControls.current) {
+                // Secondary hand / palm gyroscope camera orbit
+                const curAzimuth = activeOrbitControls.current.getAzimuthalAngle();
+                const curPolar = activeOrbitControls.current.getPolarAngle();
+                activeOrbitControls.current.setAzimuthalAngle(curAzimuth - deltaX * 0.05);
+                activeOrbitControls.current.setPolarAngle(
+                  Math.max(0.1, Math.min(Math.PI - 0.1, curPolar - deltaY * 0.05)),
+                );
+                activeOrbitControls.current.update();
+              }
+            },
+            (deltaZoom) => {
+              if (activeOrbitControls.current) {
+                // Dual-hand spatial zoom
+                if (deltaZoom > 0) {
+                  activeOrbitControls.current.dollyIn(1 + Math.min(deltaZoom * 0.02, 0.15));
+                } else {
+                  activeOrbitControls.current.dollyOut(1 + Math.min(-deltaZoom * 0.02, 0.15));
+                }
+                activeOrbitControls.current.update();
+              }
+            },
+          );
           if (pt3D) {
             handCursorState.position = pt3D;
             handCursorState.visible = true;

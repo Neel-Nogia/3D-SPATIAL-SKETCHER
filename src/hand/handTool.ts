@@ -1,6 +1,11 @@
 /**
- * handTool — Bridges hand tracking gestures to the active Tool in toolRegistry.
- * Allows ALL existing tools (Pen, Box, Line, Eraser, etc.) to work seamlessly with hand gestures!
+ * handTool — Bridges hand tracking gestures to the active Tool in toolRegistry and 3D Camera Controls.
+ * Supports:
+ * - Primary Hand: 3D Pen / Shape Drawing by pinching (thumb + index touching).
+ * - Secondary Hand: Spatial Gyroscope / Camera Orbit navigator (move hand to rotate 3D view).
+ * - Dual-Hand Zoom: Move both hands apart to zoom in, closer to zoom out.
+ * - Single-Hand Open Palm: Gyroscope Camera Orbit fallback.
+ * - Thumbs Up: Undo previous stroke / shape.
  */
 import * as THREE from 'three';
 import { toolRegistry } from '../tools/registry';
@@ -11,6 +16,7 @@ import type { Vec3, DrawingPlane } from '../types/scene';
 export class HandToolBridge {
   private isPinching = false;
   private lastPalmCenter: { x: number; y: number } | null = null;
+  private lastSecPalmCenter: { x: number; y: number } | null = null;
   private thumbsUpStartTime: number | null = null;
   private lastUndoTime = 0;
   private lastTwoHandDist: number | null = null;
@@ -67,6 +73,8 @@ export class HandToolBridge {
         this.triggerPointerUp([0, 0, 0]);
       }
       this.lastPalmCenter = null;
+      this.lastSecPalmCenter = null;
+      this.lastTwoHandDist = null;
       this.thumbsUpStartTime = null;
       return null;
     }
@@ -102,28 +110,46 @@ export class HandToolBridge {
       this.thumbsUpStartTime = null;
     }
 
-    // Gesture: TWO-HAND PINCH -> Zoom
-    if (frame.twoHandPinchDistance !== null && frame.secondaryHand) {
-      if (this.lastTwoHandDist !== null && onZoomDelta) {
-        const delta = (frame.twoHandPinchDistance - this.lastTwoHandDist) * 15;
-        onZoomDelta(delta);
+    // Secondary Hand: Spatial Gyroscope / Orbit Navigator
+    if (frame.secondaryHand && onOrbitDelta) {
+      const secPalm = frame.secondaryHand.detection.palmCenter;
+      if (this.lastSecPalmCenter) {
+        const deltaX = (secPalm.x - this.lastSecPalmCenter.x) * 12;
+        const deltaY = (secPalm.y - this.lastSecPalmCenter.y) * 12;
+        if (Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001) {
+          onOrbitDelta(deltaX, deltaY);
+        }
+      }
+      this.lastSecPalmCenter = secPalm;
+    } else {
+      this.lastSecPalmCenter = null;
+    }
+
+    // Dual-Hand Spatial Zoom
+    if (frame.secondaryHand && frame.twoHandPinchDistance !== null && onZoomDelta) {
+      if (this.lastTwoHandDist !== null) {
+        const delta = (frame.twoHandPinchDistance - this.lastTwoHandDist) * 10;
+        if (Math.abs(delta) > 0.005) {
+          onZoomDelta(delta);
+        }
       }
       this.lastTwoHandDist = frame.twoHandPinchDistance;
-      return point3D;
     } else {
       this.lastTwoHandDist = null;
     }
 
-    // Gesture: OPEN PALM -> Orbit Camera
-    if (detection.gesture === 'open_palm') {
+    // Single-Hand OPEN PALM -> Gyroscope Orbit fallback
+    if (!frame.secondaryHand && detection.gesture === 'open_palm') {
       if (this.isPinching && point3D) {
         this.triggerPointerUp(point3D);
       }
 
       if (this.lastPalmCenter && onOrbitDelta) {
-        const deltaX = (detection.palmCenter.x - this.lastPalmCenter.x) * 8;
-        const deltaY = (detection.palmCenter.y - this.lastPalmCenter.y) * 8;
-        onOrbitDelta(deltaX, deltaY);
+        const deltaX = (detection.palmCenter.x - this.lastPalmCenter.x) * 10;
+        const deltaY = (detection.palmCenter.y - this.lastPalmCenter.y) * 10;
+        if (Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001) {
+          onOrbitDelta(deltaX, deltaY);
+        }
       }
       this.lastPalmCenter = detection.palmCenter;
       return point3D;
@@ -131,7 +157,7 @@ export class HandToolBridge {
       this.lastPalmCenter = null;
     }
 
-    // Gesture: PINCH -> Draw / PointerDown / PointerMove / PointerUp
+    // Primary Hand: PINCH -> Draw / PointerDown / PointerMove / PointerUp
     if (point3D) {
       if (detection.isPinching) {
         if (!this.isPinching) {
@@ -193,6 +219,7 @@ export class HandToolBridge {
   reset() {
     this.isPinching = false;
     this.lastPalmCenter = null;
+    this.lastSecPalmCenter = null;
     this.thumbsUpStartTime = null;
     this.lastTwoHandDist = null;
   }

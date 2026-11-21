@@ -56,14 +56,14 @@ export function isThumbExtended(
 /**
  * Detect gesture from 21 landmarks.
  * Uses hysteresis to prevent pinch flicker when hovering near threshold:
- * - Start pinch if normDist < startThreshold (default 0.38)
- * - Keep pinch active until normDist > releaseThreshold (default 0.55)
+ * - Start pinch if normDist < startThreshold (default 0.42)
+ * - Keep pinch active until normDist > releaseThreshold (default 0.58)
  */
 export function detectGesture(
   landmarks: Landmark[],
   wasPinching: boolean = false,
-  startThreshold: number = 0.38,
-  releaseThreshold: number = 0.55,
+  startThreshold: number = 0.42,
+  releaseThreshold: number = 0.58,
 ): GestureDetectionResult {
   if (landmarks.length < 21) {
     return {
@@ -127,7 +127,20 @@ export function detectGesture(
     };
   }
 
-  // 2. FIST: all 4 fingers curled
+  // 2. PINCH: thumb and index tips are touching / close
+  // Only classify as a fist if all 4 fingers and thumb are tightly curled below the palm MCP line
+  const isTightFist = allFingersCurled && !thumbExt && thumbTip.y > middleMcp.y && indexTip.y > middleMcp.y;
+  if (isPinching && !isTightFist) {
+    return {
+      gesture: 'pinch',
+      normPinchDistance,
+      isPinching: true,
+      handSize,
+      palmCenter,
+    };
+  }
+
+  // 3. FIST: all 4 fingers curled
   if (allFingersCurled) {
     return {
       gesture: 'fist',
@@ -138,7 +151,7 @@ export function detectGesture(
     };
   }
 
-  // 3. PINCH: thumb and index tips are close
+  // Fallback pinch for any other finger orientation
   if (isPinching) {
     return {
       gesture: 'pinch',
